@@ -34,8 +34,11 @@
     </div>
 
     <!-- Escena 3D -->
-    <a-scene embedded vr-mode-ui="enabled: false" physics="debug: false">
-        
+    <a-scene embedded 
+             vr-mode-ui="enabled: false" 
+             physics="debug: false"
+             shadow="type: pcfsoft">
+
         <!-- Cámara con colisiones -->
         <a-entity 
           id="cam"
@@ -47,16 +50,36 @@
             <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
         </a-entity>
 
+        <!-- Iluminación más realista -->
+        <!-- Luz ambiental suave -->
+        <a-entity light="type: ambient; intensity: 0.4; color: #ffffff"></a-entity>
+
+        <!-- Luz direccional (como sol) con sombras -->
+        <a-entity light="type: directional; intensity: 0.9; castShadow: true"
+                  position="5 10 5"
+                  shadow-camera-automatic="true">
+        </a-entity>
+
         <!-- Entorno 3D -->
-        <a-entity gltf-model="models/cuarto.glb" position="0 0 0" scale="1 1 1"></a-entity>
+        <a-entity gltf-model="models/cuarto.glb" 
+                  position="0 0 0" 
+                  scale="1 1 1" 
+                  shadow="cast: true; receive: true"></a-entity>
 
         <!-- Piso invisible para colisión -->
-        <a-plane position="0 0 0" rotation="-90 0 0" width="50" height="50" static-body visible="false"></a-plane>
+        <a-plane position="0 0 0" 
+                 rotation="-90 0 0" 
+                 width="50" 
+                 height="50" 
+                 static-body 
+                 visible="false" 
+                 shadow="receive: true"></a-plane>
 
         <!-- Personaje animado -->
         <a-entity gltf-model="models/personaje.glb"
                   position="2 0 -3"
                   scale="1 1 1"
+                  shadow="cast: true"
                   animation-mixer="clip: Idle; loop: repeat">
         </a-entity>
 
