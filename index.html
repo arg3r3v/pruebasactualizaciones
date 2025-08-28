@@ -2,82 +2,35 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>Gerardo Arcos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gerardo Arcos - Galería (cuarto)</title>
 
-  <!-- A-Frame -->
-  <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
-  <!-- aframe-extras (si quieres activar componentes extras después) -->
-  <script src="https://cdn.jsdelivr.net/gh/n5ro/aframe-extras/dist/aframe-extras.min.js"></script>
+  <!-- A-Frame (misma familia de versiones que usaste antes) -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+  <!-- environment helper (opcional para cielo / suelo simple) -->
+  <script src="https://unpkg.com/aframe-environment-component/dist/aframe-environment-component.min.js"></script>
+
+  <!-- aframe-extras (movement-controls con nipple/joystick) -->
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
+
+  <!-- physics (cannon + aframe-physics-system) para static-body / kinematic-body -->
+  <script src="https://cdn.jsdelivr.net/gh/schteppe/cannon.js@0.6.2/build/cannon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
 
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="img/logo.png" type="image/png">
 
   <style>
-    /* --- Joystick radial (izquierda) --- */
-    #joystick-wrap{
-      position: fixed;
-      left: 18px;
-      bottom: 18px;
-      width: 140px;
-      height: 140px;
-      z-index: 9999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      touch-action: none;
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    #joy-base{
-      width: 120px;
-      height: 120px;
-      border-radius: 50%;
-      background: rgba(0,0,0,0.28);
-      backdrop-filter: blur(4px);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-    #joy-knob{
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.9);
-      transform: translate(0,0);
-      box-shadow: 0 6px 18px rgba(0,0,0,0.4);
-    }
-
-    /* Sprint / acciones (derecha) */
-    #action-wrap{
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      z-index: 9999;
-      display:flex;
-      gap: 12px;
-      touch-action:none;
-    }
-    .action-btn{
-      width: 64px;
-      height: 64px;
-      border-radius: 12px;
-      background: rgba(0,0,0,0.32);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      color: #fff;
-      font-weight:700;
-      backdrop-filter: blur(4px);
-    }
-
-    /* Oculta controles en pantallas grandes */
-    @media (min-width: 900px){
-      #joystick-wrap, #action-wrap { display: none; }
-    }
+    body { margin: 0; font-family: sans-serif; }
+    header { z-index: 10000; position: relative; }
+    /* escena embebida ocupa una porción; ajusta height si la quieres más grande */
+    a-scene[embedded] { width: 100%; height: 72vh; display: block; }
+    #poema { padding: 20px; max-width: 900px; margin: 18px auto; }
   </style>
 </head>
 <body>
+  <!-- Header / nav (mantengo tu estructura) -->
   <header>
       <h1>GERARDO ARCOS</h1>
       <nav>
@@ -91,234 +44,82 @@
       <button id="menu-button"><img src="img/menu.png" alt="Menú"></button>
   </header>
 
-  <div id="overlay"></div>
-  <div id="fullscreen-menu">
-      <ul>
-          <li><a href="index.html">Inicio</a></li>
-          <li><a href="biografia.html">Sobre Mí</a></li>
-          <li><a href="proyectos.html">Proyectos</a></li>
-          <li><a href="https://arg3r3v.github.io/axolotl/juego.html">Videojuegos</a></li>
-      </ul>
-  </div>
-
-  <!-- UI táctil -->
-  <div id="joystick-wrap" aria-hidden="true">
-    <div id="joy-base">
-      <div id="joy-knob"></div>
-    </div>
-  </div>
-
-  <div id="action-wrap" aria-hidden="true">
-    <div id="btn-sprint" class="action-btn">⚡</div>
-    <!-- puedes agregar más botones aquí -->
-  </div>
-
-  <!-- Escena A-Frame -->
+  <!-- ========== ESCENA: solo cuarto + plano colisión ========== -->
   <a-scene embedded
-           vr-mode-ui="enabled: false"
+           physics="gravity: 0 -9.8 0" 
            shadow="type: pcfsoft"
            renderer="antialias: true; physicallyCorrectLights: true">
 
-    <!-- RIG: cámara dentro de un rig (mejor para mover todo) -->
-    <a-entity id="rig" position="0 1.6 5" kinematic-body>
+    <!-- Assets: solo el cuarto (cambia la ruta según tu repo) -->
+    <a-assets>
+      <a-asset-item id="cuartoModel" src="models/cuarto.glb"></a-asset-item>
+      <!-- si quieres, añade aquí un video o textura después -->
+    </a-assets>
+
+    <!-- Environment (cielo / ground helper para reflexiones simples) -->
+    <a-entity environment="preset: studio; shadow:true; groundColor:#222; skyColor:#dfe7ec"></a-entity>
+
+    <!-- Iluminación (directional + ambient) -->
+    <a-entity light="type: hemisphere; intensity: 0.6; color: #ffffff; groundColor: #444"></a-entity>
+    <a-entity light="type: directional; intensity: 1.0; castShadow: true" position="6 10 6" rotation="-45 25 0" shadow-camera-automatic="true"></a-entity>
+
+    <!-- RIG: movement-controls con joystick (nipple) + keyboard/gamepad -->
+    <a-entity id="rig"
+              position="0 1.6 5"
+              movement-controls="controls: gamepad, trackpad, keyboard, nipple"
+              kinematic-body>
+      <!-- Cámara dentro del rig -->
       <a-entity id="cam"
                 camera
-                look-controls="touchEnabled: true; magicWindowTrackingEnabled: true; pointerLockEnabled: true"
-                wasd-controls="acceleration: 20">
+                look-controls="touchEnabled: true; magicWindowTrackingEnabled: true; pointerLockEnabled: true">
         <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
       </a-entity>
     </a-entity>
 
-    <!-- Iluminación -->
-    <a-entity light="type: hemisphere; intensity: 0.6; color: #ffffff; groundColor: #444"></a-entity>
-    <a-entity light="type: directional; intensity: 1.0; castShadow: true"
-              position="5 10 7"
-              rotation="-45 25 0"
-              shadow-camera-automatic="true"></a-entity>
+    <!-- MODELO: tu cuarto (solo uno) -->
+    <a-entity id="cuarto" gltf-model="#cuartoModel" position="0 0 0" scale="1 1 1" shadow="cast: true; receive: true"></a-entity>
 
-    <!-- Sky neutro (si quieres un HDR sustitúyelo por environment component o cubemap) -->
-    <a-sky color="#e9eef2"></a-sky>
+    <!-- Plano invisible para colisiones (piso). static-body para bloquear al rig -->
+    <a-plane id="colision-piso"
+             position="0 0 0"
+             rotation="-90 0 0"
+             width="200" height="200"
+             visible="false"
+             static-body
+             shadow="receive: true">
+    </a-plane>
 
-    <!-- Escenario GLB (tu cuarto) -->
-    <a-entity id="scene-model"
-              gltf-model="models/cuarto.glb"
-              position="0 0 0"
-              scale="1 1 1"
-              shadow="cast: true; receive: true"></a-entity>
-
-    <!-- Colliders (ejemplos: muros) -> ajusta posiciones/medidas a tu cuarto -->
-    <!-- Puedes dejar solo el piso si tu .glb ya tiene paredes sólidas visuales -->
-    <a-box class="collider" position="0 1 -6" width="8" height="2" depth="0.5" visible="false" static-body></a-box>
-    <a-box class="collider" position="-4 1 0" width="0.5" height="2" depth="10" visible="false" static-body></a-box>
-    <!-- Piso invisible -->
-    <a-plane position="0 0 0" rotation="-90 0 0" width="60" height="60" visible="false" static-body shadow="receive: true"></a-plane>
-
-    <!-- Personaje animado (adorno) -->
-    <a-entity gltf-model="models/personaje.glb"
-              position="2 0 -3"
-              scale="1 1 1"
-              shadow="cast: true"
-              animation-mixer="clip: *; loop: repeat"></a-entity>
+    <!-- Opcional: bounds visual para debug (descomenta para probar) -->
+    <!-- <a-box position="0 0.5 -4" depth="0.5" height="1" width="1" color="#f00"></a-box> -->
 
   </a-scene>
+  <!-- ========== FIN ESCENA ========== -->
 
+  <!-- Tu contenido HTML fuera de la escena -->
   <div id="poema">
       <h2>PORQUE AÚN SOY JOVEN</h2>
-          <p class="poem">
-              Porque aún soy joven, y algo necio,<br>
-              Aún soy joven para errar sin malicia,<br>
-              Para amar con verdad y sin prisa,<br>
-              Para aprender lo que el tiempo avisa,<br>
-              Y perderme en charlas de risa,<br>
-              En conversaciones sin juicio.
-          </p>
-          <p class="poem">
-              Pobres los jóvenes que en la juventud se hallan,<br>
-              Tan enfermos de sueños que nunca estallan,<br>
-              Malaventurados los que deben soportar,<br>
-              La llama eterna que no pueden apagar.
-          </p>
+      <p class="poem">
+        Porque aún soy joven, y algo necio,<br>
+        Aún soy joven para errar sin malicia,<br>
+        Para amar con verdad y sin prisa,<br>
+        Para aprender lo que el tiempo avisa,<br>
+        Y perderme en charlas de risa,<br>
+        En conversaciones sin juicio.
+      </p>
+      <p class="poem">
+        Pobres los jóvenes que en la juventud se hallan,<br>
+        Tan enfermos de sueños que nunca estallan,<br>
+        Malaventurados los que deben soportar,<br>
+        La llama eterna que no pueden apagar.
+      </p>
   </div>
 
-  <!-- Lógica del joystick + movimiento (funciona en móvil y desktop) -->
   <script>
-    (function () {
-      const rig = document.getElementById('rig');
-      const cam = document.getElementById('cam');
-      const joyWrap = document.getElementById('joystick-wrap');
-      const joyKnob = document.getElementById('joy-knob');
-      const btnSprint = document.getElementById('btn-sprint');
-
-      // parámetros
-      const MAX_RADIUS = 44; // px knob travel
-      const BASE_CENTER = { x: 70, y: 70 }; // centro local del joystick (mitad de 140x140)
-      const SPEED = 2.0; // m/s
-      const SPRINT_MULT = 1.9;
-
-      let pointerId = null;
-      let input = { x: 0, y: 0 }; // x: right+, y: forward+
-      let sprint = false;
-
-      // helpers
-      function setKnob(pos) {
-        joyKnob.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
-      }
-      function resetKnob() {
-        setKnob({ x: 0, y: 0 });
-        input.x = 0; input.y = 0;
-      }
-
-      // touch / mouse start on joystick
-      joyWrap.addEventListener('touchstart', (ev) => {
-        ev.preventDefault();
-        const t = ev.changedTouches[0];
-        pointerId = t.identifier;
-        handleMoveTouch(t);
-      }, { passive: false });
-
-      joyWrap.addEventListener('touchmove', (ev) => {
-        ev.preventDefault();
-        for (const t of ev.changedTouches) if (t.identifier === pointerId) { handleMoveTouch(t); break; }
-      }, { passive: false });
-
-      joyWrap.addEventListener('touchend', (ev) => {
-        for (const t of ev.changedTouches) if (t.identifier === pointerId) { pointerId = null; resetKnob(); break; }
-      }, { passive: false });
-
-      // fallback mouse
-      let mouseDown = false;
-      joyWrap.addEventListener('mousedown', (e) => { mouseDown = true; handleMoveMouse(e); });
-      window.addEventListener('mousemove', (e) => { if (mouseDown) handleMoveMouse(e); });
-      window.addEventListener('mouseup', (e) => { if (mouseDown) { mouseDown = false; resetKnob(); } });
-
-      function handleMoveMouse(e){
-        const rect = joyWrap.getBoundingClientRect();
-        const localX = e.clientX - rect.left;
-        const localY = e.clientY - rect.top;
-        computeInputFromLocal(localX, localY);
-      }
-      function handleMoveTouch(t){
-        const rect = joyWrap.getBoundingClientRect();
-        const localX = t.clientX - rect.left;
-        const localY = t.clientY - rect.top;
-        computeInputFromLocal(localX, localY);
-      }
-
-      function computeInputFromLocal(localX, localY){
-        // map local coordinates (0..140) to center-based (-center..center)
-        const dx = localX - BASE_CENTER.x;
-        const dy = localY - BASE_CENTER.y;
-        // dy positive down; we want forward = -dy
-        const dist = Math.hypot(dx, dy);
-        const angle = Math.atan2(dy, dx); // radians
-
-        const limited = Math.min(dist, MAX_RADIUS);
-        // knob position
-        const kx = Math.cos(angle) * limited;
-        const ky = Math.sin(angle) * limited;
-        setKnob({ x: kx, y: ky });
-
-        // normalized input [-1..1]
-        const nx = (kx / MAX_RADIUS);
-        const ny = (-ky / MAX_RADIUS); // invert Y so up == forward
-
-        input.x = parseFloat(nx.toFixed(3));
-        input.y = parseFloat(ny.toFixed(3));
-      }
-
-      // sprint button
-      if (btnSprint){
-        btnSprint.addEventListener('touchstart', (e)=>{ e.preventDefault(); sprint = true; }, {passive:false});
-        btnSprint.addEventListener('touchend', (e)=>{ e.preventDefault(); sprint = false; }, {passive:false});
-        btnSprint.addEventListener('mousedown', ()=>{ sprint = true; });
-        btnSprint.addEventListener('mouseup', ()=>{ sprint = false; });
-      }
-
-      // movement tick using rig.object3D (moves respecting camera rotation)
-      AFRAME.registerComponent('joy-mover', {
-        tick: function (time, delta) {
-          const dt = (delta || 16) / 1000;
-          // respect WASD on desktop too: if wasd-controls active the cam position may change; we combine
-          const camObj = cam.object3D;
-          const rigObj = rig.object3D;
-
-          // compute forward direction (camera -Z)
-          const forward = new THREE.Vector3();
-          camObj.getWorldDirection(forward);
-          forward.y = 0;
-          forward.normalize();
-
-          // right vector
-          const right = new THREE.Vector3();
-          right.crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
-
-          // combine input
-          let mv = new THREE.Vector3();
-          mv.addScaledVector(forward, input.y);
-          mv.addScaledVector(right, input.x);
-
-          if (mv.lengthSq() > 0.0001){
-            mv.normalize();
-            const speed = SPEED * (sprint ? SPRINT_MULT : 1);
-            mv.multiplyScalar(speed * dt);
-            rigObj.position.add(mv);
-            // apply position back to DOM (works with kinematic-body)
-            rig.setAttribute('position', `${rigObj.position.x} ${rigObj.position.y} ${rigObj.position.z}`);
-          }
-        }
-      });
-
-      // attach to scene so tick runs
-      document.addEventListener('DOMContentLoaded', () => {
-        const scene = document.querySelector('a-scene');
-        if (scene) scene.setAttribute('joy-mover', '');
-      });
-
-      // Reset knob if user leaves the touch area unexpectedly
-      window.addEventListener('blur', resetKnob);
-      window.addEventListener('visibilitychange', () => { if (document.hidden) resetKnob(); });
-
-    })();
+    // Ajuste: si necesitas que el rig empiece en otra posición al cargar, cambia aquí.
+    document.addEventListener('DOMContentLoaded', () => {
+      // si prefieres empezar en (0,1.6,2) o en otro punto, descomenta y modifica:
+      // const rig = document.getElementById('rig'); rig.setAttribute('position','0 1.6 2');
+    });
   </script>
 
   <script defer src="script.js"></script>
