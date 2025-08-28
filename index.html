@@ -1,14 +1,70 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Gerardo Arcos</title>
     <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
     <!-- físicas -->
     <script src="https://cdn.jsdelivr.net/gh/n5ro/aframe-extras/dist/aframe-extras.min.js"></script>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="img/logo.png" type="image/png">
+
+    <style>
+      /* Controles táctiles (overlay) */
+      #touch-ui{
+        position: fixed;
+        bottom: 18px;
+        left: 18px;
+        z-index: 9999;
+        display: flex;
+        gap: 8px;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+      }
+      .joy-btn{
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        background: rgba(0,0,0,0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 20px;
+        backdrop-filter: blur(4px);
+      }
+      /* Botón de giro lateral (derecha) */
+      #touch-ui-right{
+        position: fixed;
+        bottom: 18px;
+        right: 18px;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+      }
+      .small-note{
+        position: fixed;
+        right: 20px;
+        top: 80px;
+        background: rgba(255,255,255,0.8);
+        color: #111;
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        z-index: 9998;
+      }
+      @media (min-width: 900px){
+        /* ocultar controles en pantallas grandes si lo prefieres */
+        #touch-ui, #touch-ui-right { display: none; }
+      }
+    </style>
 </head>
 <body>
     <header>
@@ -33,11 +89,27 @@
         </ul>
     </div>
 
+    <!-- UI táctil: izquierda = movimiento -->
+    <div id="touch-ui" aria-hidden="true">
+      <div id="btn-left" class="joy-btn">◀</div>
+      <div id="btn-forward" class="joy-btn">▲</div>
+      <div id="btn-back" class="joy-btn">▼</div>
+      <div id="btn-right" class="joy-btn">▶</div>
+    </div>
+
+    <!-- UI táctil: derecha = botones extra (ej. sprint) -->
+    <div id="touch-ui-right" aria-hidden="true">
+      <div id="btn-sprint" class="joy-btn">⚡</div>
+    </div>
+
+    <div class="small-note">En móvil: mantén pulsado para moverte</div>
+
     <!-- Escena 3D -->
     <a-scene embedded 
              vr-mode-ui="enabled: false" 
              physics="debug: false"
-             shadow="type: pcfsoft">
+             shadow="type: pcfsoft"
+             renderer="antialias: true; colorManagement: true; physicallyCorrectLights: true">
 
         <!-- Cámara con colisiones -->
         <a-entity 
@@ -52,10 +124,10 @@
 
         <!-- Iluminación más realista -->
         <!-- Luz ambiental suave -->
-        <a-entity light="type: ambient; intensity: 0.4; color: #ffffff"></a-entity>
+        <a-entity light="type: ambient; intensity: 0.45; color: #ffffff"></a-entity>
 
         <!-- Luz direccional (como sol) con sombras -->
-        <a-entity light="type: directional; intensity: 0.9; castShadow: true"
+        <a-entity light="type: directional; intensity: 0.95; castShadow: true"
                   position="5 10 5"
                   shadow-camera-automatic="true">
         </a-entity>
@@ -102,6 +174,99 @@
                 La llama eterna que no pueden apagar.
             </p>
     </div>
+
+    <script>
+      // Mobile / touch movement: simple system that moves #cam while you hold buttons.
+      AFRAME.registerComponent('mobile-move-handler', {
+        init: function () {
+          const el = this.el; // scene
+          const cam = document.querySelector('#cam');
+          if (!cam) return;
+
+          const SPEED = 1.5; // m/s, ajusta aquí si quieres más o menos velocidad
+          const SPRINT_MULT = 2.0;
+          let sprint = false;
+
+          // movement flags
+          const move = { forward: false, back: false, left: false, right: false };
+
+          // Buttons
+          const btnForward = document.getElementById('btn-forward');
+          const btnBack = document.getElementById('btn-back');
+          const btnLeft = document.getElementById('btn-left');
+          const btnRight = document.getElementById('btn-right');
+          const btnSprint = document.getElementById('btn-sprint');
+
+          const setFlag = (flag, value) => { move[flag] = value; };
+
+          const addTouchMouse = (node, flagName) => {
+            if (!node) return;
+            node.addEventListener('touchstart', (e) => { e.preventDefault(); setFlag(flagName, true); }, {passive:false});
+            node.addEventListener('touchend', (e) => { e.preventDefault(); setFlag(flagName, false); }, {passive:false});
+            node.addEventListener('mousedown', (e) => { e.preventDefault(); setFlag(flagName, true); });
+            node.addEventListener('mouseup', (e) => { e.preventDefault(); setFlag(flagName, false); });
+            node.addEventListener('mouseleave', (e) => { setFlag(flagName, false); });
+          };
+
+          addTouchMouse(btnForward, 'forward');
+          addTouchMouse(btnBack, 'back');
+          addTouchMouse(btnLeft, 'left');
+          addTouchMouse(btnRight, 'right');
+
+          if (btnSprint){
+            btnSprint.addEventListener('touchstart', (e)=>{ e.preventDefault(); sprint = true; }, {passive:false});
+            btnSprint.addEventListener('touchend', (e)=>{ e.preventDefault(); sprint = false; }, {passive:false});
+            btnSprint.addEventListener('mousedown', ()=>{ sprint = true; });
+            btnSprint.addEventListener('mouseup', ()=>{ sprint = false; });
+            btnSprint.addEventListener('mouseleave', ()=>{ sprint = false; });
+          }
+
+          // Reusable vectors
+          this._dir = new THREE.Vector3();
+          this._right = new THREE.Vector3();
+          this._moveVec = new THREE.Vector3();
+          this._tmpPos = new THREE.Vector3();
+
+          // tick uses object3D of camera to compute movement relative to view
+          this.tick = (time, timeDelta) => {
+            const dt = (timeDelta || 16) / 1000; // seconds
+            const speed = SPEED * (sprint ? SPRINT_MULT : 1);
+
+            // compute forward direction (camera's -Z)
+            cam.object3D.getWorldDirection(this._dir); // points where camera looks
+            // ignore Y component (move on XZ plane)
+            this._dir.y = 0;
+            this._dir.normalize();
+
+            // right vector = dir cross up
+            this._right.crossVectors(this._dir, new THREE.Vector3(0, 1, 0)).normalize();
+
+            // reset move vector
+            this._moveVec.set(0,0,0);
+
+            if (move.forward) this._moveVec.add(this._dir);
+            if (move.back) this._moveVec.sub(this._dir);
+            if (move.right) this._moveVec.add(this._right);
+            if (move.left) this._moveVec.sub(this._right);
+
+            if (this._moveVec.lengthSq() > 0) {
+              this._moveVec.normalize().multiplyScalar(speed * dt);
+              // current position
+              this._tmpPos.copy(cam.getAttribute('position'));
+              this._tmpPos.add(this._moveVec);
+              // set new position (works with kinematic-body)
+              cam.setAttribute('position', `${this._tmpPos.x} ${this._tmpPos.y} ${this._tmpPos.z}`);
+            }
+          };
+        }
+      });
+
+      // Attach component to scene so tick runs
+      document.addEventListener('DOMContentLoaded', () => {
+        const scene = document.querySelector('a-scene');
+        if (scene) scene.setAttribute('mobile-move-handler', '');
+      });
+    </script>
 
     <script defer src="script.js"></script>
 </body>
