@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Galería — Cuartos (fix texturas + sombras)</title>
+  <title>Galería — Cuartos (versión limpia)</title>
 
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
@@ -28,32 +28,23 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- UNA SOLA INSTANCIA de cuarto1 usada como geometría y navmesh -->
-    <a-entity id="cuarto1_ent"
-              gltf-model="#cuarto1"
-              nav-mesh
-              shadow="receive: true">
-    </a-entity>
+    <!-- UNA SOLA INSTANCIA del cuarto1: geometría + navmesh -->
+    <a-entity id="cuarto1_ent" gltf-model="#cuarto1" nav-mesh shadow="receive: true"></a-entity>
 
+    <!-- Otros modelos (solo la carga, sin transformaciones adicionales) -->
     <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="receive: true"></a-entity>
     <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="receive: true"></a-entity>
     <a-entity id="cuarto4_ent" gltf-model="#cuarto4" shadow="receive: true"></a-entity>
     <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="receive: true"></a-entity>
     <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="receive: true"></a-entity>
 
-    <script>
-      window.LIGHT_INTENSITY = 2.0; // ajustable
-      window.LIGHT_DISTANCE = 35;
-      window.LIGHT_DECAY = 2;
-    </script>
-
-    <!-- LUZ INTERIOR (suave) -->
+    <!-- LUZ ÚNICA interior, intensidad moderada -->
     <a-entity id="lamp"
               position="0 2.6 0"
               light="type: point; color: #ffffff; intensity: 2.0; distance: 35; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- RIG -->
+    <!-- RIG / movimiento (constrainToNavMesh activado) -->
     <a-entity id="rig" position="0 0 2"
               movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
       <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
@@ -61,184 +52,109 @@
       </a-entity>
     </a-entity>
 
+    <!-- Sistema limpio: solo activa sombras (no toca materiales) y loggea info útil -->
     <script>
-      AFRAME.registerSystem('texture-filter-and-shadow-fixes', {
+      AFRAME.registerSystem('clean-shadows-and-logger', {
         init: function () {
           const sceneEl = this.el;
           const lampEl = document.getElementById('lamp');
-          const room = document.getElementById('cuarto1_ent');
 
-          // Defaults
-          const SHADOW_MAP_SIZE = 4096; // subir si tu equipo lo aguanta (8192)
-          const PIXEL_RATIO_CAP = Math.min(window.devicePixelRatio || 1, 2);
-
-          // on renderer ready
+          // Config renderer shadow map en cuanto esté listo (no tocar texturas)
           sceneEl.addEventListener('render-target-loaded', () => {
             try {
               const renderer = sceneEl.renderer;
               if (!renderer) return;
-
-              // tratar de desactivar useLegacyLights si existe (evitar warning)
-              try {
-                if ('useLegacyLights' in renderer) {
-                  renderer.useLegacyLights = false;
-                }
-              } catch (e) { /* no crítico */ }
-
-              renderer.setPixelRatio(PIXEL_RATIO_CAP);
+              // evita pixelRatio excesivo que pueda causar bloqueos; límite 2
+              renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
               renderer.outputEncoding = THREE.sRGBEncoding;
               renderer.shadowMap.enabled = true;
+              renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-              // prefer VSM when available? leave PCFSoft as fallback
-              if (THREE.VSMShadowMap) {
-                renderer.shadowMap.type = THREE.VSMShadowMap;
-              } else {
-                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+              // configurar shadow map size de la luz (calidad)
+              const light = lampEl && lampEl.getObject3D('light');
+              if (light && light.shadow) {
+                light.shadow.mapSize.width = 4096; // puedes bajar si va lento
+                light.shadow.mapSize.height = 4096;
+                light.shadow.radius = 2;
+                light.shadow.bias = -0.00012;
               }
-
-              // configure lamp shadow map size & params
-              const lightObj = lampEl && lampEl.getObject3D('light');
-              if (lightObj && lightObj.shadow) {
-                lightObj.shadow.mapSize.width = SHADOW_MAP_SIZE;
-                lightObj.shadow.mapSize.height = SHADOW_MAP_SIZE;
-                lightObj.shadow.radius = 2;
-                lightObj.shadow.bias = -0.00012;
-              }
-              console.log('[texture-filter-and-shadow-fixes] renderer ready. pixelRatio=', renderer.getPixelRatio(), 'shadowMapSize=', SHADOW_MAP_SIZE);
-            } catch (e) {
-              console.warn('Renderer init failed:', e);
-            }
+              console.log('[clean] renderer configured, shadowMapSize=', light && light.shadow ? light.shadow.mapSize.width : 'n/a');
+            } catch (e) { console.warn('[clean] renderer config failed:', e); }
           });
 
-          // Helper: normalize and improve a THREE.Texture for filtering
-          function optimizeTexture(tex, renderer) {
-            if (!tex || tex.__optimized) return;
+          // LOG helper para inspeccionar textures/materials de cada mesh (diagnóstico)
+          function logMeshInfo(mesh) {
             try {
-              // ensure color maps use sRGB
-              if (tex.encoding === undefined || tex.encoding === THREE.LinearEncoding) {
-                // Do not blindly assign sRGB to non-color maps, but for simplicity set here for color maps
-                tex.encoding = THREE.sRGBEncoding;
-              }
-              // enable mipmaps and better filtering
-              tex.generateMipmaps = true;
-              tex.minFilter = THREE.LinearMipmapLinearFilter;
-              tex.magFilter = THREE.LinearFilter;
-              // anisotropy to max supported
-              try {
-                const max = renderer.capabilities.getMaxAnisotropy();
-                tex.anisotropy = max;
-              } catch (e) {}
-              tex.needsUpdate = true;
-            } catch (e) {
-              // ignore textures we can't touch
-            }
-            tex.__optimized = true;
-          }
-
-          // Sanitize material (remove bad lightmaps etc) and optimize all its textures
-          function sanitizeAndOptimizeMaterial(mat, renderer) {
-            if (!mat) return;
-            try {
-              // Remove problematic baked maps if present
-              if (mat.lightMap) { mat.lightMap = null; mat.lightMapIntensity = 0; }
-              if (mat.aoMap) { mat.aoMap = null; mat.aoMapIntensity = 0; }
-              if (mat.emissiveMap) { mat.emissiveMap = null; mat.emissive = new THREE.Color(0x000000); mat.emissiveIntensity = 0; }
-              if (mat.envMap) { mat.envMap = null; mat.envMapIntensity = 0; }
-              // Ensure PBR values are reasonable inside (so they don't rely on env)
-              if ('metalness' in mat) mat.metalness = 0.0;
-              if ('roughness' in mat) mat.roughness = ('roughness' in mat) ? Math.max(0.7, mat.roughness) : 1.0;
-              // Optimize textures if any
-              ['map','normalMap','roughnessMap','metalnessMap','emissiveMap','aoMap','alphaMap'].forEach(key => {
-                if (mat[key]) optimizeTexture(mat[key], sceneEl.renderer);
+              const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+              mats.forEach((mat, idx) => {
+                const info = { meshName: mesh.name || mesh.id || '(unnamed)', materialIndex: idx };
+                if (mat) {
+                  info.hasMap = !!mat.map;
+                  info.hasLightMap = !!mat.lightMap;
+                  info.hasAOMap = !!mat.aoMap;
+                  info.hasEmissiveMap = !!mat.emissiveMap;
+                  // intentar leer tamaño de imagen si existe
+                  if (mat.map && mat.map.image) {
+                    const img = mat.map.image;
+                    info.mapSize = (img.width && img.height) ? `${img.width}x${img.height}` : 'image-not-ready';
+                  }
+                } else {
+                  info.material = null;
+                }
+                console.log('[mesh-info]', info);
               });
-              mat.needsUpdate = true;
-            } catch (e) {}
+            } catch (e) {
+              console.warn('[mesh-info] failed for', mesh.name, e);
+            }
           }
 
-          // Walk a mesh and apply fixes to materials and textures
-          function fixMesh(mesh) {
-            if (!mesh || !mesh.material) return;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-            mats.forEach(m => sanitizeAndOptimizeMaterial(m, sceneEl.renderer));
-          }
-
-          // Heurística para desactivar sombras en tiny meshes (evita artefactos)
-          function disableTinyMeshShadows(obj3d, lampPos) {
-            let disabled = 0;
-            obj3d.traverse(node => {
-              if (!node.isMesh) return;
-              const bbox = new THREE.Box3().setFromObject(node);
-              const size = new THREE.Vector3(); bbox.getSize(size);
-              const vol = size.x * size.y * size.z;
-              const center = new THREE.Vector3(); bbox.getCenter(center);
-              const dist = center.distanceTo(lampPos);
-              if (vol > 0 && vol < 0.01 && dist < 0.9) {
-                node.castShadow = false;
-                disabled++;
-                console.log('[texture-fix] disabled castShadow for tiny mesh:', node.name || node.id, 'vol=', vol.toFixed(5), 'dist=', dist.toFixed(2));
-              }
-              if (node.name && /lightmap|shadow|plane|quad/i.test(node.name)) {
-                node.castShadow = false;
-                disabled++;
-                console.log('[texture-fix] disabled castShadow by name:', node.name);
-              }
-            });
-            return disabled;
-          }
-
-          // Prepare entity (gltf-model)
-          function prepareEntity(el) {
+          // activar sombras en mallas, sin tocar materiales/texturas
+          function enableShadowsOnly(el) {
             if (!el) return;
-            if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
-
             el.addEventListener('model-loaded', () => {
               const obj = el.getObject3D('mesh') || el.getObject3D('model');
               if (!obj) return;
-              // traverse meshes and fix materials & textures
               obj.traverse(node => {
                 if (node.isMesh) {
-                  fixMesh(node);
+                  node.castShadow = true;
+                  node.receiveShadow = true;
+                  // log info para diagnóstico (no modificamos material)
+                  logMeshInfo(node);
                 }
               });
-
-              // small timeout to allow light/shadow map init then disable suspicious shadow casters
-              setTimeout(() => {
-                try {
-                  const lampPos = lampEl && lampEl.object3D ? lampEl.object3D.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0,2.6,0);
-                  const disabled = disableTinyMeshShadows(obj, lampPos);
-                  if (disabled > 0) console.log('[texture-fix] disabled', disabled, 'suspect shadows in', el.id || el.tagName);
-                } catch (err) { console.warn('disableTinyMeshShadows err', err); }
-              }, 250);
             });
 
             // cached case
             const maybe = el.getObject3D('mesh') || el.getObject3D('model');
             if (maybe) {
-              maybe.traverse(node => { if (node.isMesh) fixMesh(node); });
-              const lampPosNow = lampEl && lampEl.object3D ? lampEl.object3D.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0,2.6,0);
-              disableTinyMeshShadows(maybe, lampPosNow);
+              maybe.traverse(node => {
+                if (node.isMesh) {
+                  node.castShadow = true;
+                  node.receiveShadow = true;
+                  logMeshInfo(node);
+                }
+              });
             }
           }
 
-          // Apply to existing gltf-models
-          const nodes = sceneEl.querySelectorAll('[gltf-model]');
-          nodes.forEach(prepareEntity);
+          // aplicar a todos los gltf-model en la escena
+          const gltfs = sceneEl.querySelectorAll('[gltf-model]');
+          gltfs.forEach(enableShadowsOnly);
 
-          // Observe new ones
+          // observer para nuevos modelos cargados en runtime
           const mo = new MutationObserver(muts => {
             muts.forEach(m => {
               m.addedNodes.forEach(n => {
                 if (!(n instanceof Element)) return;
-                if (n.hasAttribute && n.hasAttribute('gltf-model')) prepareEntity(n);
+                if (n.hasAttribute && n.hasAttribute('gltf-model')) enableShadowsOnly(n);
               });
             });
           });
           mo.observe(sceneEl, { childList: true, subtree: true });
 
-          // clamp rig to room bbox
+          // clamp básico del rig al bounding box de cuarto1_ent (evita salir del cuarto)
           const rig = document.getElementById('rig');
+          const room = document.getElementById('cuarto1_ent');
           let bbox = null;
           const margin = 0.03;
           function computeBBox() {
@@ -248,7 +164,7 @@
           }
           room.addEventListener('model-loaded', () => {
             bbox = computeBBox();
-            if (bbox) console.log('[bbox] min:', bbox.min, 'max:', bbox.max);
+            if (bbox) console.log('[bbox] min', bbox.min, 'max', bbox.max);
           });
           const rn = room.getObject3D('mesh') || room.getObject3D('model');
           if (rn) bbox = computeBBox();
