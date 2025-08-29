@@ -3,33 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gerardo Arcos — Cuarto (colliders automáticos)</title>
+  <title>Gerardo Arcos - Cuarto con luz interior</title>
 
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-
-  <!-- aframe-extras (c-frame fork) -> movement-controls con nipple/joystick -->
+  <!-- aframe-extras (movement-controls con nipple) -->
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
-
-  <!-- Physics: cannon + aframe-physics-system -->
+  <!-- physics (cannon + aframe-physics-system) -->
   <script src="https://cdn.jsdelivr.net/gh/schteppe/cannon.js@0.6.2/build/cannon.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
-
-  <!-- animation-mixer (por si tienes animaciones) -->
+  <!-- animation-mixer por si tienes animaciones -->
   <script src="https://cdn.jsdelivr.net/npm/aframe-animation-mixer@6.0.0/dist/aframe-animation-mixer.min.js"></script>
 
   <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="img/logo.png" type="image/png">
+
   <style>
-    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#111; color:#eee; }
-    header { display:flex; align-items:center; gap:18px; padding:12px 18px; background:#fff; color:#000; }
-    header h1{ margin:0; font-size:16px; }
-    nav ul{ list-style:none; padding:0; margin:0; display:flex; gap:12px; }
-    a-scene[embedded]{ width:100%; height:72vh; display:block; }
-    #controls-ui { position: fixed; right: 18px; top: 18px; z-index: 9999; display:flex; gap:8px; }
-    #toggle-colliders { background:#222; color:#fff; border: none; padding:8px 12px; border-radius:8px; cursor:pointer; }
-    #hint { position: fixed; left: 18px; top: 18px; z-index: 9999; background: rgba(255,255,255,0.9); color:#111; padding:6px 10px; border-radius:6px; font-size:13px; }
-    /* Debug visible style for colliders (applies when toggled) */
-    .debug-collider { opacity: 0.25; } 
+    body { margin: 0; font-family: sans-serif; }
+    header { z-index: 10000; position: relative; }
+    a-scene[embedded] { width: 100%; height: 72vh; display: block; }
+    #poema { padding: 20px; max-width: 900px; margin: 18px auto; }
   </style>
 </head>
 <body>
@@ -45,196 +38,93 @@
     </nav>
   </header>
 
-  <div id="hint">Tecla D = mostrar colliders</div>
-  <div id="controls-ui">
-    <button id="toggle-colliders">Mostrar colliders</button>
-  </div>
-
-  <!-- ========== ESCENA ========== -->
+  <!-- ESCENA: cuarto con luz interior verde -->
   <a-scene embedded
            physics="gravity: 0 -9.8 0"
            shadow="type: pcfsoft"
-           renderer="antialias: true; physicallyCorrectLights: true; colorManagement: true">
+           renderer="antialias: true; physicallyCorrectLights: true">
 
-    <!-- Assets: tus 6 secciones -->
+    <!-- Assets: techo, paredes, objetos separados -->
     <a-assets>
-      <a-asset-item id="cuarto1" src="models/cuartoq.glb"></a-asset-item>
-      <a-asset-item id="cuarto2" src="models/cuartoq2.glb"></a-asset-item>
-      <a-asset-item id="cuarto3" src="models/cuartoq3.glb"></a-asset-item>
-      <a-asset-item id="cuarto4" src="models/cuartoq4.glb"></a-asset-item>
-      <a-asset-item id="cuarto5" src="models/cuartoq5.glb"></a-asset-item>
-      <a-asset-item id="cuarto6" src="models/cuartoq6.glb"></a-asset-item>
-
-      <!-- si tienes objetos agrupados en otro archivo -->
-      <a-asset-item id="objetos" src="models/objetos.glb"></a-asset-item>
+      <a-asset-item id="techoModel" src="models/cuarto1.glb"></a-asset-item>
+      <a-asset-item id="paredesModel" src="models/cuarto2.glb"></a-asset-item>
+      <a-asset-item id="objetosModel" src="models/cuarto3.glb"></a-asset-item>
+      <a-asset-item id="techoModel1" src="models/cuarto4.glb"></a-asset-item>
+      <a-asset-item id="paredesModel1" src="models/cuarto5.glb"></a-asset-item>
+      <a-asset-item id="objetosModel1" src="models/cuarto6.glb"></a-asset-item>
+      <!-- opcional: el model del personaje o decoración animada -->
+      <a-asset-item id="personajeModel" src="models/personaje.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Ambiente oscuro (la luz verde será la dominante) -->
-    <a-entity environment="preset: none; skyType: color; skyColor: #020203; ground: flat; groundColor: #020202"></a-entity>
+    <!-- Ambiente muy tenue (para que la luz verde sea dominante) -->
+    <a-entity light="type: ambient; intensity: 0.08; color: #111111"></a-entity>
 
-    <!-- Luz interior verde (editable) -->
+    <!-- LUZ INTERIOR VERDE (point light) -->
+    <!-- Ajusta position, intensity, distance y decay según tu cuarto -->
     <a-entity id="greenLamp"
-              light="type: point; color: #2bff7a; intensity: 1.8; distance: 8; decay: 2"
-              position="0 2.6 0"></a-entity>
-    <a-entity id="greenSpot"
-              light="type: spot; color: #2bff7a; intensity: 0.8; distance: 6; angle: 0.9; penumbra: 0.6; decay: 2"
-              position="0 2.6 0" rotation="-90 0 0"></a-entity>
+              light="type: point; color: #2bff7a; intensity: 1.6; distance: 8; decay: 2; castShadow: true"
+              position="0 2.8 0">
+      <!-- opcional: un pequeño globo visible que represente la lámpara en modo debug -->
+      <!-- <a-sphere radius="0.08" color="#2bff7a" position="0 0 0"></a-sphere> -->
+    </a-entity>
 
-    <!-- RIG con kinematic-body y movement-controls (nipple = joystick en móvil) -->
+    <!-- RIG para movimiento (joystick on mobile + WASD desktop) -->
     <a-entity id="rig"
               position="0 1.6 4"
-              kinematic-body
-              movement-controls="controls: gamepad, trackpad, keyboard, nipple">
-      <a-entity id="cam" camera
+              movement-controls="controls: gamepad, trackpad, keyboard, nipple"
+              kinematic-body>
+      <a-entity id="cam"
+                camera
                 look-controls="touchEnabled: true; magicWindowTrackingEnabled: true; pointerLockEnabled: true">
         <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
       </a-entity>
     </a-entity>
 
-    <!-- Visual: carga las 6 secciones (sin static-body) -->
-    <a-entity id="sec1" gltf-model="#cuarto1" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec2" gltf-model="#cuarto2" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec3" gltf-model="#cuarto3" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec4" gltf-model="#cuarto4" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec5" gltf-model="#cuarto5" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec6" gltf-model="#cuarto6" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <!-- MODELOS: techo arriba, paredes y objetos interiores -->
+    <!-- Pon shadow="cast: true; receive: true" para que proyecten/reciban sombras -->
+    <a-entity id="paredes" gltf-model="#paredesModel" position="0 0 0" scale="1 1 1" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="objetos" gltf-model="#objetosModel" position="0 0 0" scale="1 1 1" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="techo" gltf-model="#techoModel" position="0 0 0" scale="1 1 1" shadow="receive: true"></a-entity>
 
-    <!-- Objetos agrupados (visual) -->
-    <a-entity id="objetos" gltf-model="#objetos" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <!-- Personaje decorativo (si tienes animaciones) -->
+    <a-entity id="personaje" gltf-model="#personajeModel" position="1 0 -2" scale="1 1 1" animation-mixer="clip: *; loop: repeat" shadow="cast: true"></a-entity>
 
-    <!-- ejemplo de colliders manuales (puerta/umbral) - ajusta si hace falta -->
-    <!-- puedes descomentar para usar durante el ajuste y luego ocultarlos -->
-    <!--
-    <a-box id="door-left" position="-1.2 1 -2" width="0.3" height="2" depth="1.2" visible="true" static-body material="color:#ff0000; opacity:0.25"></a-box>
-    -->
+    <!-- Plano invisible de colisión (piso) -->
+    <a-plane id="colision-piso"
+             position="0 0 0"
+             rotation="-90 0 0"
+             width="100" height="100"
+             visible="false"
+             static-body
+             shadow="receive: true">
+    </a-plane>
 
-    <!-- Fin escena -->
   </a-scene>
 
-  <!-- Poema / resto de la página -->
-  <div id="poema" style="padding:20px; max-width:900px; margin:18px auto; background:#fff; color:#111;">
+  <!-- Contenido HTML fuera de la escena -->
+  <div id="poema">
     <h2>PORQUE AÚN SOY JOVEN</h2>
-    <p class="poem">Porque aún soy joven, y algo necio,...</p>
+    <p class="poem">
+      Porque aún soy joven, y algo necio,<br>
+      Aún soy joven para errar sin malicia,<br>
+      Para amar con verdad y sin prisa,<br>
+      Para aprender lo que el tiempo avisa,<br>
+      Y perderme en charlas de risa,<br>
+      En conversaciones sin juicio.
+    </p>
   </div>
 
-  <!-- ========== Script: generación automática de colliders desde bounding boxes ========== -->
   <script>
-  (function () {
-    const SCENE = document.querySelector('a-scene');
-    const MODEL_IDS = ['sec1','sec2','sec3','sec4','sec5','sec6','objetos']; // entidades que cargan glb
-    const createdColliders = []; // guarda referencias para toggle
-    let collidersVisible = false;
+    // Ajustes recomendados automáticos al cargar:
+    document.addEventListener('DOMContentLoaded', () => {
+      // Si quieres cambiar la posición inicial del rig:
+      // document.getElementById('rig').setAttribute('position','0 1.6 3');
 
-    // convertir quaternion a Euler grados
-    function quatToEulerDeg(q) {
-      const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
-      return { x: THREE.Math.radToDeg(e.x), y: THREE.Math.radToDeg(e.y), z: THREE.Math.radToDeg(e.z) };
-    }
-
-    // función que crea una caja collider desde bounding box (world coords)
-    function createBoxColliderFromBBox(center, size, quat, namePrefix='auto') {
-      const box = document.createElement('a-box');
-      box.classList.add('auto-collider');
-      // position and size (A-Frame uses local space when appended to scene; world positions are OK)
-      box.setAttribute('position', `${center.x.toFixed(3)} ${center.y.toFixed(3)} ${center.z.toFixed(3)}`);
-      box.setAttribute('width', Math.max(size.x, 0.01).toFixed(3));
-      box.setAttribute('height', Math.max(size.y, 0.01).toFixed(3));
-      box.setAttribute('depth', Math.max(size.z, 0.01).toFixed(3));
-      // rotation from quaternion
-      const e = quatToEulerDeg(quat);
-      box.setAttribute('rotation', `${e.x.toFixed(3)} ${e.y.toFixed(3)} ${e.z.toFixed(3)}`);
-      // invisible by default:
-      box.setAttribute('visible', 'false');
-      // Give a small material so debug is visible when toggled
-      box.setAttribute('material', 'color: #00ff00; opacity: 0.25; side: double;');
-      // set static-body for physics collisions
-      box.setAttribute('static-body', '');
-      box.setAttribute('id', `${namePrefix}-${Date.now()}`);
-      SCENE.appendChild(box);
-      createdColliders.push(box);
-      return box;
-    }
-
-    // For each model entity, when it triggers model-loaded, compute bbox and add collider
-    MODEL_IDS.forEach(id => {
-      const ent = document.getElementById(id);
-      if (!ent) return;
-      ent.addEventListener('model-loaded', (evt) => {
-        const model = evt.detail.model; // THREE.Object3D root for the glTF
-        // compute bounding box in world space
-        const bbox = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
-
-        // get quaternion of the model's root (world quaternion)
-        // some models might have nested transforms; get world quaternion from a representative mesh
-        const quat = new THREE.Quaternion();
-        model.getWorldQuaternion(quat);
-
-        // Create an approximate box collider slightly shrunk to prevent tight sticking
-        const shrink = 0.98;
-        size.multiplyScalar(shrink);
-
-        // If size is extremely flat (e.g., floor plane), create a thin collider at correct height
-        // But a-box with small height still works.
-        createBoxColliderFromBBox(center, size, quat, `collider-${id}`);
-
-        // Optionally: if you prefer to use the mesh itself as trimesh collider (more precise but heavier),
-        // uncomment the following lines to add static-body to the visual entity instead of box:
-        // ent.setAttribute('static-body',''); 
-        // note: keep only one approach (either generated boxes or static-body on the model).
-      });
+      // Si tu techo tiene huecos y la luz se "escapa", sube un poco intensity o reduce distance:
+      // document.getElementById('greenLamp').setAttribute('light','intensity: 1.8; distance: 9;');
     });
-
-    // Toggle visibility helper: shows/hides created colliders and toggles CSS class for debug style
-    function setCollidersVisible(v) {
-      collidersVisible = !!v;
-      createdColliders.forEach(c => {
-        c.setAttribute('visible', collidersVisible ? 'true' : 'false');
-        if (collidersVisible) c.classList.add('debug-collider'); else c.classList.remove('debug-collider');
-      });
-      document.getElementById('toggle-colliders').textContent = collidersVisible ? 'Ocultar colliders' : 'Mostrar colliders';
-    }
-
-    // Button handler
-    document.getElementById('toggle-colliders').addEventListener('click', () => {
-      setCollidersVisible(!collidersVisible);
-    });
-
-    // Key handler: D toggles colliders
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'd' || e.key === 'D') {
-        setCollidersVisible(!collidersVisible);
-      }
-    });
-
-    // Optional: debug helper to print all colliders to console
-    window.showCollidersDebug = () => {
-      console.log('Colliders creados:', createdColliders);
-      createdColliders.forEach(c => console.log(c.getAttribute('position'), c.getAttribute('width'), c.getAttribute('height'), c.getAttribute('depth')));
-    };
-
-    // Small safety: if models are already cached/loaded before listeners attached, call modelLoaded manually
-    // (walk through MODEL_IDS and if entity.getObject3D('mesh') exists, trigger a fake model-loaded)
-    window.addEventListener('load', () => {
-      MODEL_IDS.forEach(id => {
-        const ent = document.getElementById(id);
-        if (!ent) return;
-        const obj = ent.getObject3D('mesh') || ent.getObject3D('gltf'); // try both
-        if (obj) {
-          // emulate event
-          ent.emit('model-loaded', { model: obj }, false);
-        }
-      });
-    });
-
-  })();
   </script>
 
-  <!-- Nota: si quieres usar colliders exactos (trimesh) en lugar de cajas, 
-       cambia en cada <a-entity gltf-model> el atributo 'static-body' y quita la generación automática. -->
-
+  <script defer src="script.js"></script>
 </body>
 </html>
