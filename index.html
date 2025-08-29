@@ -69,14 +69,14 @@
     <a-entity light="type: ambient; intensity: 0.06; color: #080808"></a-entity>
 
     <!-- LUZ INTERIOR VERDE (point + spot) -->
-    <!-- Posición cambiada a x:-6 y:2 z:4 y ~10x intensidad -->
+    <!-- Posición cambiada a x:6 y:2 z:4 y ~10x intensidad -->
     <a-entity id="greenLamp"
               light="type: point; color: #2bff7a; intensity: 18; distance: 12; decay: 2"
-              position="-6 2 4"></a-entity>
+              position="-6 4 8"></a-entity>
 
     <a-entity id="greenSpot"
               light="type: spot; color: #2bff7a; intensity: 9; distance: 12; angle: 0.8; penumbra: 0.6; decay: 2"
-              position="-6 2 4" rotation="-90 0 0"></a-entity>
+              position="-6 4 8" rotation="-90 0 0"></a-entity>
 
     <!-- RIG para movimiento (joystick on mobile + WASD desktop) -->
     <a-entity id="rig"
