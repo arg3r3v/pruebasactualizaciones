@@ -5,20 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Galería — Cuartos (1 luz interior + sombras)</title>
 
-  <!-- A-Frame y extras (mismos que usabas) -->
+  <!-- A-Frame y extras (solo los necesarios) -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <script src="https://unpkg.com/aframe-environment-component/dist/aframe-environment-component.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
   <style> body { margin: 0; height: 100vh; } </style>
 </head>
 <body>
   <a-scene id="scene"
-           renderer="antialias: true; physicallyCorrectLights: true"
+           renderer="antialias: true; physicallyCorrectLights: false"
            shadow="type: pcfsoft; autoUpdate: true"
            background="color: #bfcdd8">
 
-    <!-- Assets: SOLO tus 6 glb -->
+    <!-- ASSETS: SOLO tus 6 glb -->
     <a-assets>
       <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
       <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
@@ -29,107 +28,173 @@
     </a-assets>
 
     <!-- NAVMESH: cuarto1 es la navmesh (oculta) -->
-    <a-entity id="navmesh" nav-mesh gltf-model="#cuarto1" visible="false" shadow="receive: true"></a-entity>
+    <a-entity id="navmesh" nav-mesh gltf-model="#cuarto1" visible="false"></a-entity>
 
-    <!-- ÚNICA LUZ: Spotlight dentro del cuarto. Ajusta position si quieres la misma que en Blender -->
-    <!-- uso spot para sombras direccionadas y controlables -->
+    <!-- ÚNICA LUZ: Spotlight interior (ajusta position si quieres la misma ubicación que la lámpara en Blender) -->
     <a-entity id="lamp"
-              position="0 2.6 0"
+              position="0 2.2 0"
               light="type: spot;
-                     color: #fff;
-                     intensity: 1.25;
-                     distance: 35;
+                     color: #ffffff;
+                     intensity: 2.2;
+                     distance: 40;
                      angle: 0.9;
                      penumbra: 0.8;
                      decay: 2;
                      castShadow: true"
               shadow="mapSizeWidth: 2048; mapSizeHeight: 2048; bias: -0.0005; cameraNear: 0.5; cameraFar: 60">
-      <!-- opcional: pequeña esfera para referencia (invisible) -->
-      <a-sphere radius="0.06" visible="false"></a-sphere>
     </a-entity>
 
-    <!-- RIG y cámara — misma lógica de movimiento y colisiones que usas -->
+    <!-- RIG y cámara — misma lógica de movimiento -->
     <a-entity id="rig" movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;" position="0 0 2">
-      <a-entity camera position="0 4 0" look-controls="pointerLockEnabled: true">
+      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
         <a-cursor></a-cursor>
       </a-entity>
     </a-entity>
 
-    <!-- Inserta los GLB tal cual (no cambio posiciones ni escalas). Si tus GLB contienen sus propias transformaciones, A-Frame respetará esas local transforms. -->
-    <!-- Cuarto1 ya fue usado como navmesh; lo colocamos también visible si quieres mostrar la geometría real del cuarto. -->
-    <a-entity id="cuarto1_vis" gltf-model="#cuarto1" position="0 0 0" rotation="0 0 0" scale="1 1 1"></a-entity>
-
-    <!-- Los demás assets exportados desde Blender mantendrán sus posiciones relativas internas -->
+    <!-- MUESTRA LOS GLB en escena. No cambio posiciones internas (las que exportaste desde Blender se respetan). -->
+    <a-entity id="cuarto1_vis" gltf-model="#cuarto1"></a-entity>
     <a-entity id="cuarto2_vis" gltf-model="#cuarto2"></a-entity>
     <a-entity id="cuarto3_vis" gltf-model="#cuarto3"></a-entity>
     <a-entity id="cuarto4_vis" gltf-model="#cuarto4"></a-entity>
     <a-entity id="cuarto5_vis" gltf-model="#cuarto5"></a-entity>
     <a-entity id="cuarto6_vis" gltf-model="#cuarto6"></a-entity>
 
-    <!-- Sistema / script para habilitar shadowMap y aplicar cast/receive en todas las mallas al cargar -->
+    <!-- Script: habilita sombras, corrige materiales DoubleSide y asegura que el rig no salga del bounding box del navmesh -->
     <script>
-      AFRAME.registerSystem('enable-shadows', {
+      AFRAME.registerSystem('fix-shadows-and-clamp', {
         init: function () {
           const sceneEl = this.el;
-
-          // Activar shadowMap en renderer cuando esté listo
+          // activar shadowMap cuando el renderer esté listo
           sceneEl.addEventListener('render-target-loaded', () => {
             try {
               if (sceneEl.renderer) {
                 sceneEl.renderer.shadowMap.enabled = true;
                 sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-                sceneEl.renderer.physicallyCorrectLights = true;
+                // codificación correcta de salida para colores (útil si las texturas se ven oscuras)
+                sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
               }
-            } catch (err) {
-              console.warn('No se pudo configurar renderer.shadowMap:', err);
-            }
+            } catch (e) { console.warn('renderer config failed:', e); }
           });
 
-          // Función que habilita cast/receive en un entity con modelo
-          function enableShadowsOnEntity(el) {
-            // Marca atributo shadow (útil para primitivas)
+          // activa sombras y doble cara en cada glTF cargado
+          function prepareModel(el) {
+            if (!el) return;
+            // asegúrate de que A-Frame marque el atributo shadow también
             if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
 
-            // Cuando el modelo esté cargado
-            el.addEventListener('model-loaded', function () {
+            el.addEventListener('model-loaded', () => {
               const obj = el.getObject3D('mesh') || el.getObject3D('model');
               if (!obj) return;
-              obj.traverse(function (node) {
+              obj.traverse(node => {
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
-                  if (node.material) node.material.needsUpdate = true;
+                  // Si la pared aparece negra por culado de caras internas -> doble cara
+                  try {
+                    if (node.material) {
+                      node.material.side = THREE.DoubleSide;
+                      node.material.needsUpdate = true;
+                    }
+                  } catch (err) { /* ignorar si no tiene material modificable */ }
                 }
               });
             });
 
-            // Si ya está disponible (cached)
+            // caso cached
             const maybe = el.getObject3D('mesh') || el.getObject3D('model');
             if (maybe) {
-              maybe.traverse(function (node) {
+              maybe.traverse(node => {
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
+                  try {
+                    if (node.material) {
+                      node.material.side = THREE.DoubleSide;
+                      node.material.needsUpdate = true;
+                    }
+                  } catch (err) {}
                 }
               });
             }
           }
 
-          // Aplicar a los gltf-model actuales
+          // aplicar a todos los gltf-model ya presentes
           const gltfs = sceneEl.querySelectorAll('[gltf-model]');
-          gltfs.forEach(enableShadowsOnEntity);
+          gltfs.forEach(prepareModel);
 
-          // Observar la escena por si se agregan entidades dinámicamente
-          const mo = new MutationObserver(mutations => {
-            mutations.forEach(m => {
+          // observar nuevos nodos añadidos
+          const mo = new MutationObserver(muts => {
+            muts.forEach(m => {
               m.addedNodes.forEach(node => {
                 if (!(node instanceof Element)) return;
-                if (node.hasAttribute && node.hasAttribute('gltf-model')) enableShadowsOnEntity(node);
+                if (node.hasAttribute && node.hasAttribute('gltf-model')) prepareModel(node);
               });
             });
           });
           mo.observe(sceneEl, { childList: true, subtree: true });
-        }
+
+          // --- CLAMP DE RIG A BOUNDING BOX DEL NAVMESH ---
+          const rig = document.getElementById('rig');
+          const nav = document.getElementById('navmesh');
+          let bbox = null;     // THREE.Box3
+          let margin = 0.05;   // pequeño margen para que no se pegue a las paredes
+
+          function computeBBoxFromNav() {
+            const obj = nav.getObject3D('mesh') || nav.getObject3D('model');
+            if (!obj) return null;
+            const box = new THREE.Box3().setFromObject(obj);
+            return box;
+          }
+
+          // cuando el navmesh carga, computar bbox
+          nav.addEventListener('model-loaded', () => {
+            bbox = computeBBoxFromNav();
+            // si el bbox es casi nulo, intenta con objeto directo
+            if (!bbox || bbox.isEmpty()) {
+              bbox = computeBBoxFromNav();
+            }
+            if (bbox) {
+              console.log('[navmesh bbox] min:', bbox.min, 'max:', bbox.max);
+            } else {
+              console.warn('No pude calcular bounding box del navmesh. El clamp no funcionará.');
+            }
+          });
+
+          // si ya estaba cargado
+          const navObjNow = nav.getObject3D('mesh') || nav.getObject3D('model');
+          if (navObjNow) {
+            bbox = computeBBoxFromNav();
+            if (bbox) console.log('[navmesh bbox loaded early]');
+          }
+
+          // tick para limitar rig dentro del bbox (solo X,Z). Mantiene Y igual.
+          this.el.addEventListener('loaded', () => {
+            sceneEl.addEventListener('tick', () => {
+              if (!bbox || !rig) return;
+              const pos = rig.object3D.position;
+              // clamp X,Z según bbox
+              const minX = bbox.min.x + margin;
+              const maxX = bbox.max.x - margin;
+              const minZ = bbox.min.z + margin;
+              const maxZ = bbox.max.z - margin;
+              let changed = false;
+              if (pos.x < minX) { pos.x = minX; changed = true; }
+              if (pos.x > maxX) { pos.x = maxX; changed = true; }
+              if (pos.z < minZ) { pos.z = minZ; changed = true; }
+              if (pos.z > maxZ) { pos.z = maxZ; changed = true; }
+              if (changed) {
+                // si tu movement-controls usa velocity, puedes también poner cero (si existe)
+                try {
+                  const mc = rig.components['movement-controls'];
+                  if (mc && mc.velocity) {
+                    mc.velocity.set(0, 0, 0);
+                  }
+                } catch (e) {}
+              }
+            });
+          });
+
+        } // init
       });
     </script>
 
