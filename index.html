@@ -2,11 +2,12 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Galería — Cuartos (1 luz interior + sombras, fondo negro)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Galería — Cuartos (1 luz interior + sombras)</title>
 
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <!-- extras para movement-controls / navmesh si los usabas -->
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
   <style>
@@ -17,10 +18,10 @@
 <body>
   <a-scene id="scene"
            background="color: #000000"
-           renderer="antialias: true; physicallyCorrectLights: true"
+           renderer="antialias: true; physicallyCorrectLights: false"
            shadow="type: pcfsoft; autoUpdate: true">
 
-    <!-- ASSETS -->
+    <!-- ASSETS: SOLO tus 6 glb (ajusta rutas si es necesario) -->
     <a-assets>
       <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
       <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
@@ -30,24 +31,25 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- navmesh (cuarto1 es navmesh) -->
+    <!-- Navmesh: cuarto1 es el navmesh (oculto para el usuario) -->
     <a-entity id="navmesh" nav-mesh gltf-model="#cuarto1" visible="false"></a-entity>
 
-    <!-- ÚNICA LUZ interior: point light (bombilla).
-         mapSize y radius serán ajustados en runtime según plataforma -->
+    <!-- ÚNICA LUZ INTERIOR: point light (bombilla).
+         Si deseas más intensidad, aumenta `intensity`. -->
     <a-entity id="lamp"
               position="0 2.6 0"
               light="type: point; color: #ffffff; intensity: 6.0; distance: 40; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- RIG (movimiento) -->
-    <a-entity id="rig" movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;" position="0 0 2">
+    <!-- RIG y cámara — mantiene movement-controls -->
+    <a-entity id="rig" position="0 0 2"
+              movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
       <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
         <a-cursor></a-cursor>
       </a-entity>
     </a-entity>
 
-    <!-- Los GLBs — respetan su transformación interna exportada desde Blender -->
+    <!-- Coloca los GLBs tal como exportaste desde Blender (respetan sus transforms internas) -->
     <a-entity id="cuarto1_vis" gltf-model="#cuarto1"></a-entity>
     <a-entity id="cuarto2_vis" gltf-model="#cuarto2"></a-entity>
     <a-entity id="cuarto3_vis" gltf-model="#cuarto3"></a-entity>
@@ -55,82 +57,66 @@
     <a-entity id="cuarto5_vis" gltf-model="#cuarto5"></a-entity>
     <a-entity id="cuarto6_vis" gltf-model="#cuarto6"></a-entity>
 
-    <!-- Script: renderer tweaks, adaptive shadow settings, material fixes, clamp a bbox -->
+    <!-- SCRIPT: activa sombras, corrige materiales y clamp del rig dentro del navmesh -->
     <script>
-      AFRAME.registerSystem('mobile-friendly-shadows', {
+      AFRAME.registerSystem('fix-shadows-and-clamp', {
         init: function () {
           const sceneEl = this.el;
           const lamp = document.getElementById('lamp');
 
-          // Detect mobile/simple heuristic
-          const ua = navigator.userAgent || '';
-          const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(ua);
-
-          // Tweak values per platform
-          const desktopShadowMapSize = 2048;
-          const mobileShadowMapSize = 1024;
-          const desktopPixelRatioLimit = 2.0;
-          const mobilePixelRatioLimit = 1.25;
-
-          const shadowMapSize = isMobile ? mobileShadowMapSize : desktopShadowMapSize;
-          const pixelRatioLimit = isMobile ? mobilePixelRatioLimit : desktopPixelRatioLimit;
-
-          // When renderer ready, configure it
+          // Renderer configuration cuando esté listo
           sceneEl.addEventListener('render-target-loaded', () => {
             try {
               const renderer = sceneEl.renderer;
               if (!renderer) return;
-              // Limit pixel ratio to avoid extreme GPU/memory on mobile
-              const pr = Math.min(window.devicePixelRatio || 1, pixelRatioLimit);
-              renderer.setPixelRatio(pr);
+              // Mantener físicamente correct lights en false para control sencillo de intensidad
+              renderer.physicallyCorrectLights = false;
               renderer.outputEncoding = THREE.sRGBEncoding;
               renderer.shadowMap.enabled = true;
               renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-              renderer.physicallyCorrectLights = true;
 
-              // configure the light's shadow map size and softness
-              const light = lamp && lamp.getObject3D('light');
-              if (light) {
-                light.castShadow = true;
-                light.shadow.mapSize.width = shadowMapSize;
-                light.shadow.mapSize.height = shadowMapSize;
-                // soften edges: radius larger => softer shadows (may be more expensive)
-                light.shadow.radius = isMobile ? 1.0 : 2.0;
-                // bias to reduce acne
-                light.shadow.bias = -0.0006;
+              // Ajustar shadow map size para la luz interior
+              const lightObj = lamp && lamp.getObject3D('light');
+              if (lightObj && lightObj.shadow) {
+                // Calidad: 2048 es buen balance; sube a 4096 si quieres menos pixelado (más costo)
+                lightObj.shadow.mapSize.width = 2048;
+                lightObj.shadow.mapSize.height = 2048;
+                lightObj.shadow.radius = 2;   // suaviza bordes
+                lightObj.shadow.bias = -0.0006;
               }
-
-              console.log('Renderer configured. isMobile=', isMobile, 'pixelRatio=', pr, 'shadowMapSize=', shadowMapSize);
+              console.log('[scene] renderer configured');
             } catch (e) {
-              console.warn('Error configuring renderer:', e);
+              console.warn('No se pudo configurar renderer:', e);
             }
           });
 
-          // Material fixes for glTF meshes to avoid "black" materials and ensure textures use sRGB
+          // Forzar propiedades en materiales para evitar "negro" o dependencias de HDRI
           function fixMaterial(mesh) {
             if (!mesh || !mesh.material) return;
             const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
             mats.forEach(mat => {
               if (!mat) return;
               try {
-                mat.side = THREE.DoubleSide;            // ver desde dentro
+                mat.side = THREE.DoubleSide;
                 if ('metalness' in mat) mat.metalness = 0.0;
-                if ('roughness' in mat) mat.roughness = Math.max(0.9, mat.roughness || 1.0);
+                if ('roughness' in mat) mat.roughness = ('roughness' in mat) ? Math.max(0.7, mat.roughness) : 1.0;
                 mat.envMap = null;
                 mat.envMapIntensity = 0;
                 if (mat.map) mat.map.encoding = THREE.sRGBEncoding;
                 if (mat.emissiveMap) mat.emissiveMap.encoding = THREE.sRGBEncoding;
                 mat.needsUpdate = true;
               } catch (err) {
-                // ignore materials we can't touch
+                // Ignorar materiales que no se puedan tocar
               }
             });
           }
 
-          // Prepare any entity with gltf-model: enable shadows and fix materials on model-loaded
+          // Preparar una entidad gltf-model: sombras y material fixes
           function prepareEntity(el) {
             if (!el) return;
+            // marcar atributo shadow (útil)
             if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
+
             el.addEventListener('model-loaded', () => {
               const obj = el.getObject3D('mesh') || el.getObject3D('model');
               if (!obj) return;
@@ -142,7 +128,8 @@
                 }
               });
             });
-            // cached
+
+            // caso ya cacheado
             const maybe = el.getObject3D('mesh') || el.getObject3D('model');
             if (maybe) {
               maybe.traverse(node => {
@@ -155,11 +142,11 @@
             }
           }
 
-          // apply to现ent gltf-models
+          // aplicar a todos los gltf-model actuales
           const gltfs = sceneEl.querySelectorAll('[gltf-model]');
           gltfs.forEach(prepareEntity);
 
-          // observe new nodes
+          // observar por nuevos modelos
           const mo = new MutationObserver(muts => {
             muts.forEach(m => {
               m.addedNodes.forEach(n => {
@@ -170,11 +157,11 @@
           });
           mo.observe(sceneEl, { childList: true, subtree: true });
 
-          // --- clamp rig to navmesh bounding box to prevent leaving the closed room ---
+          // --- Clamp: evitar que el rig salga del bounding box del navmesh (cuarto1) ---
           const rig = document.getElementById('rig');
           const nav = document.getElementById('navmesh');
           let bbox = null;
-          const margin = 0.05;
+          const margin = 0.03;
 
           function computeBBox() {
             const obj = nav.getObject3D('mesh') || nav.getObject3D('model');
@@ -185,9 +172,11 @@
 
           nav.addEventListener('model-loaded', () => {
             bbox = computeBBox();
-            if (bbox) console.log('navmesh bbox:', bbox.min, bbox.max);
+            if (bbox) console.log('[navmesh bbox]', bbox.min, bbox.max);
+            else console.warn('No pude calcular bbox del navmesh.');
           });
 
+          // si ya cargado
           const navNow = nav.getObject3D('mesh') || nav.getObject3D('model');
           if (navNow) bbox = computeBBox();
 
@@ -205,7 +194,7 @@
               try {
                 const mc = rig.components['movement-controls'];
                 if (mc && mc.velocity) mc.velocity.set(0,0,0);
-              } catch(e){}
+              } catch (e) {}
             }
           });
 
