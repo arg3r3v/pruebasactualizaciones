@@ -2,22 +2,25 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Galería — Cuartos (1 luz interior + sombras)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Galería — Cuartos (1 luz interior + sombras, fondo negro)</title>
 
-  <!-- A-Frame (sin environment component) -->
+  <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
-  <style> body { margin: 0; height: 100vh; } </style>
+  <style>
+    html,body { height:100%; margin:0; background:#000; }
+    a-scene { height:100vh; width:100vw; }
+  </style>
 </head>
 <body>
   <a-scene id="scene"
+           background="color: #000000"
            renderer="antialias: true; physicallyCorrectLights: true"
-           shadow="type: pcfsoft; autoUpdate: true"
-           background="color: #bfcdd8">
+           shadow="type: pcfsoft; autoUpdate: true">
 
-    <!-- ASSETS: SOLO tus 6 glb -->
+    <!-- ASSETS -->
     <a-assets>
       <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
       <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
@@ -27,29 +30,24 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- NAVMESH: cuarto1 es navmesh (oculta) -->
+    <!-- navmesh (cuarto1 es navmesh) -->
     <a-entity id="navmesh" nav-mesh gltf-model="#cuarto1" visible="false"></a-entity>
 
-    <!-- ÚNICA LUZ: Point light (bombilla interior) más potente para iluminar todo el cuarto -->
+    <!-- ÚNICA LUZ interior: point light (bombilla).
+         mapSize y radius serán ajustados en runtime según plataforma -->
     <a-entity id="lamp"
-              position="0 2.5 0"
-              light="type: point;
-                     color: #ffffff;
-                     intensity: 15.0;
-                     distance: 30;
-                     decay: 2;
-                     castShadow: true"
-              shadow="mapSizeWidth: 2048; mapSizeHeight: 2048; bias: -0.0005; radius: 1.2">
+              position="0 2.6 0"
+              light="type: point; color: #ffffff; intensity: 6.0; distance: 40; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- RIG y cámara — lógica de movimiento -->
+    <!-- RIG (movimiento) -->
     <a-entity id="rig" movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;" position="0 0 2">
       <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
         <a-cursor></a-cursor>
       </a-entity>
     </a-entity>
 
-    <!-- MUESTRA LOS GLB en escena. No cambio posiciones internas (las que exportaste desde Blender se respetan). -->
+    <!-- Los GLBs — respetan su transformación interna exportada desde Blender -->
     <a-entity id="cuarto1_vis" gltf-model="#cuarto1"></a-entity>
     <a-entity id="cuarto2_vis" gltf-model="#cuarto2"></a-entity>
     <a-entity id="cuarto3_vis" gltf-model="#cuarto3"></a-entity>
@@ -57,58 +55,82 @@
     <a-entity id="cuarto5_vis" gltf-model="#cuarto5"></a-entity>
     <a-entity id="cuarto6_vis" gltf-model="#cuarto6"></a-entity>
 
-    <!-- Script: corrige materiales PBR, activa sombras y evita que el rig salga del bounding box del navmesh -->
+    <!-- Script: renderer tweaks, adaptive shadow settings, material fixes, clamp a bbox -->
     <script>
-      AFRAME.registerSystem('shadows-and-material-fix', {
+      AFRAME.registerSystem('mobile-friendly-shadows', {
         init: function () {
           const sceneEl = this.el;
+          const lamp = document.getElementById('lamp');
 
-          // Configurar renderer cuando esté listo
+          // Detect mobile/simple heuristic
+          const ua = navigator.userAgent || '';
+          const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(ua);
+
+          // Tweak values per platform
+          const desktopShadowMapSize = 2048;
+          const mobileShadowMapSize = 1024;
+          const desktopPixelRatioLimit = 2.0;
+          const mobilePixelRatioLimit = 1.25;
+
+          const shadowMapSize = isMobile ? mobileShadowMapSize : desktopShadowMapSize;
+          const pixelRatioLimit = isMobile ? mobilePixelRatioLimit : desktopPixelRatioLimit;
+
+          // When renderer ready, configure it
           sceneEl.addEventListener('render-target-loaded', () => {
             try {
-              if (sceneEl.renderer) {
-                sceneEl.renderer.shadowMap.enabled = true;
-                sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-                sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
-                sceneEl.renderer.physicallyCorrectLights = true;
+              const renderer = sceneEl.renderer;
+              if (!renderer) return;
+              // Limit pixel ratio to avoid extreme GPU/memory on mobile
+              const pr = Math.min(window.devicePixelRatio || 1, pixelRatioLimit);
+              renderer.setPixelRatio(pr);
+              renderer.outputEncoding = THREE.sRGBEncoding;
+              renderer.shadowMap.enabled = true;
+              renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+              renderer.physicallyCorrectLights = true;
+
+              // configure the light's shadow map size and softness
+              const light = lamp && lamp.getObject3D('light');
+              if (light) {
+                light.castShadow = true;
+                light.shadow.mapSize.width = shadowMapSize;
+                light.shadow.mapSize.height = shadowMapSize;
+                // soften edges: radius larger => softer shadows (may be more expensive)
+                light.shadow.radius = isMobile ? 1.0 : 2.0;
+                // bias to reduce acne
+                light.shadow.bias = -0.0006;
               }
-            } catch (e) { console.warn('renderer config failed:', e); }
+
+              console.log('Renderer configured. isMobile=', isMobile, 'pixelRatio=', pr, 'shadowMapSize=', shadowMapSize);
+            } catch (e) {
+              console.warn('Error configuring renderer:', e);
+            }
           });
 
-          // Forzar valores en materiales glTF para que no dependan de HDRI
-          function fixMaterialForMesh(mesh) {
+          // Material fixes for glTF meshes to avoid "black" materials and ensure textures use sRGB
+          function fixMaterial(mesh) {
             if (!mesh || !mesh.material) return;
-            const mat = mesh.material;
-            try {
-              // Si el material es un array (multi-material), manejar cada uno
-              if (Array.isArray(mat)) {
-                mat.forEach(m => {
-                  if (!m) return;
-                  m.side = THREE.DoubleSide;
-                  if ('metalness' in m) m.metalness = 0.0;
-                  if ('roughness' in m) m.roughness = 1.0;
-                  m.envMap = null;
-                  m.envMapIntensity = 0;
-                  if (m.map) m.map.encoding = THREE.sRGBEncoding;
-                  m.needsUpdate = true;
-                });
-              } else {
-                mat.side = THREE.DoubleSide;
+            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            mats.forEach(mat => {
+              if (!mat) return;
+              try {
+                mat.side = THREE.DoubleSide;            // ver desde dentro
                 if ('metalness' in mat) mat.metalness = 0.0;
-                if ('roughness' in mat) mat.roughness = 1.0;
+                if ('roughness' in mat) mat.roughness = Math.max(0.9, mat.roughness || 1.0);
                 mat.envMap = null;
                 mat.envMapIntensity = 0;
                 if (mat.map) mat.map.encoding = THREE.sRGBEncoding;
+                if (mat.emissiveMap) mat.emissiveMap.encoding = THREE.sRGBEncoding;
                 mat.needsUpdate = true;
+              } catch (err) {
+                // ignore materials we can't touch
               }
-            } catch (err) { /* no bloquear si algún material tiene estructura distinta */ }
+            });
           }
 
-          // Preparar cada entidad con gltf-model: activar sombras y fijar materiales
+          // Prepare any entity with gltf-model: enable shadows and fix materials on model-loaded
           function prepareEntity(el) {
             if (!el) return;
             if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
-
             el.addEventListener('model-loaded', () => {
               const obj = el.getObject3D('mesh') || el.getObject3D('model');
               if (!obj) return;
@@ -116,29 +138,28 @@
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
-                  fixMaterialForMesh(node);
+                  fixMaterial(node);
                 }
               });
             });
-
-            // si ya estaba cached
+            // cached
             const maybe = el.getObject3D('mesh') || el.getObject3D('model');
             if (maybe) {
               maybe.traverse(node => {
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
-                  fixMaterialForMesh(node);
+                  fixMaterial(node);
                 }
               });
             }
           }
 
-          // Aplica a todos los gltf presentes
+          // apply to现ent gltf-models
           const gltfs = sceneEl.querySelectorAll('[gltf-model]');
           gltfs.forEach(prepareEntity);
 
-          // Observer para nuevos modelos
+          // observe new nodes
           const mo = new MutationObserver(muts => {
             muts.forEach(m => {
               m.addedNodes.forEach(n => {
@@ -149,7 +170,7 @@
           });
           mo.observe(sceneEl, { childList: true, subtree: true });
 
-          // --- CLAMP: evitar que el rig salga del bounding box del navmesh ---
+          // --- clamp rig to navmesh bounding box to prevent leaving the closed room ---
           const rig = document.getElementById('rig');
           const nav = document.getElementById('navmesh');
           let bbox = null;
@@ -165,12 +186,10 @@
           nav.addEventListener('model-loaded', () => {
             bbox = computeBBox();
             if (bbox) console.log('navmesh bbox:', bbox.min, bbox.max);
-            else console.warn('No se pudo calcular bbox del navmesh.');
           });
 
-          // si ya cargado
-          const now = nav.getObject3D('mesh') || nav.getObject3D('model');
-          if (now) bbox = computeBBox();
+          const navNow = nav.getObject3D('mesh') || nav.getObject3D('model');
+          if (navNow) bbox = computeBBox();
 
           sceneEl.addEventListener('tick', () => {
             if (!bbox || !rig) return;
