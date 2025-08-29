@@ -3,22 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Galería — Cuartos (upsample textures + larger shadow map)</title>
+  <title>Galería — Diagnóstico texturas & fixes</title>
 
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
-  <style>
-    html,body { height:100%; margin:0; background:#000; }
-    a-scene { height:100vh; width:100vw; }
-  </style>
+  <style> html,body{height:100%;margin:0;background:#000} a-scene{height:100vh;width:100vw} </style>
 </head>
 <body>
-  <a-scene id="scene"
-           background="color: #000000"
-           renderer="antialias: true; physicallyCorrectLights: false"
-           shadow="type: pcfsoft; autoUpdate: true">
-
+  <a-scene id="scene" background="color:#000000" renderer="antialias:true; physicallyCorrectLights:false" shadow="type:pcfsoft; autoUpdate:true">
     <a-assets>
       <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
       <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
@@ -28,225 +21,273 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- una sola instancia de cuarto1 -->
-    <a-entity id="cuarto1_ent" gltf-model="#cuarto1" nav-mesh shadow="receive: true"></a-entity>
+    <!-- una sola instancia del cuarto1 -->
+    <a-entity id="cuarto1_ent" gltf-model="#cuarto1" nav-mesh shadow="receive:true"></a-entity>
 
-    <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="receive: true"></a-entity>
-    <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="receive: true"></a-entity>
-    <a-entity id="cuarto4_ent" gltf-model="#cuarto4" shadow="receive: true"></a-entity>
-    <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="receive: true"></a-entity>
-    <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="receive: true"></a-entity>
+    <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="receive:true"></a-entity>
+    <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="receive:true"></a-entity>
+    <a-entity id="cuarto4_ent" gltf-model="#cuarto4" shadow="receive:true"></a-entity>
+    <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="receive:true"></a-entity>
+    <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="receive:true"></a-entity>
 
-    <!-- LUZ (ajústala si hace falta) -->
     <a-entity id="lamp" position="0 2.6 0"
-              light="type: point; color: #ffffff; intensity: 2.0; distance: 35; decay: 2; castShadow: true">
-    </a-entity>
+              light="type:point; color:#ffffff; intensity:2.0; distance:35; decay:2; castShadow:true"></a-entity>
 
-    <!-- RIG -->
-    <a-entity id="rig" position="0 0 2"
-              movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
-      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
-        <a-cursor></a-cursor>
-      </a-entity>
+    <a-entity id="rig" position="0 0 2" movement-controls="constrainToNavMesh:true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
+      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled:true"><a-cursor></a-cursor></a-entity>
     </a-entity>
 
     <script>
-      AFRAME.registerSystem('upsample-and-shadowsize', {
-        init: function () {
-          const sceneEl = this.el;
-          const lampEl = document.getElementById('lamp');
-          const room = document.getElementById('cuarto1_ent');
+    AFRAME.registerSystem('diag-fix-textures', {
+      init: function () {
+        const sceneEl = this.el;
+        const lampEl = document.getElementById('lamp');
 
-          // ---------- CONFIGURACIÓN (modifica si quieres) ----------
-          const SHADOW_MAP_MULTIPLIER = 3; // duplica=2, triplica=3, etc.
-          const UPSCALE_FACTOR = 3;        // factor para upsample de texturas (2 o 3)
-          const MIN_TEX_SIZE = 512;        // si la textura es menor, la upsampleamos
-          const MAX_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 2);
-          // ---------------------------------------------------------
+        // Config ajustable
+        const TARGET_MIN_TEX = 1024; // tamaño objetivo mínimo para texturas color/lightmap (px)
+        const UP_SCALE_FACTOR = 2;    // multiplicador si queremos forzar (se usa solo si textura < TARGET_MIN_TEX)
+        const SHADOW_BASE = 2048;
+        const SHADOW_MULT = 3; // factor para shadow map: 1..4 (cuidado con rendimiento)
+        const PIXEL_RATIO_CAP = Math.min(window.devicePixelRatio || 1, 2);
 
-          // Detecta mobile y reduce agresividad si es teléfono
-          const ua = navigator.userAgent || '';
-          const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(ua);
-          // Si es mobile reduce multiplicadores para no matar la GPU
-          const effectiveShadowMultiplier = isMobile ? Math.max(1, Math.min(SHADOW_MAP_MULTIPLIER, 2)) : SHADOW_MAP_MULTIPLIER;
-          const effectiveUpscaleFactor = isMobile ? Math.max(1, Math.min(UPSCALE_FACTOR, 2)) : UPSCALE_FACTOR;
+        // Utilidades three.js
+        function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
+        function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
 
-          // Cuando renderer esté listo, aumentar shadow map size multiplicando
-          sceneEl.addEventListener('render-target-loaded', () => {
-            try {
-              const renderer = sceneEl.renderer;
-              if (!renderer) return;
-              renderer.setPixelRatio(MAX_PIXEL_RATIO);
-              renderer.outputEncoding = THREE.sRGBEncoding;
-              renderer.shadowMap.enabled = true;
-              // prefer VSM if available for smoother shadows; fallback PCFSoft
-              if (THREE.VSMShadowMap) renderer.shadowMap.type = THREE.VSMShadowMap;
-              else renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // Log inicial de capacidades
+        sceneEl.addEventListener('render-target-loaded', ()=>{
+          try {
+            const renderer = sceneEl.renderer;
+            if (!renderer) return;
+            // try to silence legacy warning if possible (no garantiza nada)
+            if ('useLegacyLights' in renderer) try{ renderer.useLegacyLights=false; }catch(e){}
 
-              // calculamos un shadowMapSize base y lo multiplicamos
-              const BASE = 2048; // base razonable
-              const chosenSize = Math.max(1024, Math.min(16384, BASE * effectiveShadowMultiplier));
-              // aplica al light obj
-              const lightObj = lampEl && lampEl.getObject3D('light');
-              if (lightObj && lightObj.shadow) {
-                lightObj.shadow.mapSize.width = chosenSize;
-                lightObj.shadow.mapSize.height = chosenSize;
-                lightObj.shadow.radius = (chosenSize >= 4096) ? 3 : 2;
-                lightObj.shadow.bias = -0.00012;
+            const caps = renderer.capabilities || {};
+            const maxTex = caps.getMaxTextureSize ? caps.getMaxTextureSize() : (caps.maxTextureSize || 4096);
+            const maxAniso = caps.getMaxAnisotropy ? caps.getMaxAnisotropy() : (renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1);
+            const pr = Math.min(window.devicePixelRatio || 1, PIXEL_RATIO_CAP);
+
+            renderer.setPixelRatio(pr);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // increase shadow map size (con cuidado)
+            const chosenShadow = Math.max(1024, Math.min(16384, SHADOW_BASE * SHADOW_MULT));
+            const lightObj = lampEl && lampEl.getObject3D && lampEl.getObject3D('light');
+            if (lightObj && lightObj.shadow) {
+              lightObj.shadow.mapSize.width = Math.min(chosenShadow, maxTex);
+              lightObj.shadow.mapSize.height = Math.min(chosenShadow, maxTex);
+              lightObj.shadow.radius = (chosenShadow >= 4096) ? 3 : 2;
+              lightObj.shadow.bias = -0.00012;
+            }
+
+            console.log('[DIAG] Renderer ready. pixelRatio=', pr,
+                        'maxTextureSize=', maxTex,
+                        'maxAnisotropy=', maxAniso,
+                        'shadowMap=', lightObj && lightObj.shadow ? lightObj.shadow.mapSize.width : 'n/a');
+          } catch(e){ console.warn('[DIAG] render-target-loaded error', e); }
+        });
+
+        // funcion para crear una textura POT y/o upscaled desde una image element
+        function makePOTTextureFromImage(img, desiredSize, renderer, encodingIsSRGB) {
+          try {
+            const w = img.width || img.naturalWidth || 256;
+            const h = img.height || img.naturalHeight || 256;
+            // mantener aspect ratio: escoger max(w,h) y escalar hasta desiredSize (o nextPOT)
+            const maxSide = Math.max(w,h);
+            const targetSide = Math.max(desiredSize || maxSide, nextPOT(maxSide));
+            // limitar por maxTextureSize de GPU
+            const maxGPU = renderer.capabilities.getMaxTextureSize();
+            const finalSide = Math.min(targetSide, maxGPU);
+            // canvas cuadrado finalSide x finalSide (mantiene aspect ratio porque dibujamos con drawImage)
+            const canvas = document.createElement('canvas');
+            canvas.width = finalSide;
+            canvas.height = finalSide;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            // Dibujar la imagen centrada/escalada (manteniendo proporción)
+            const aspect = w/h;
+            let drawW = finalSide, drawH = finalSide;
+            if (aspect > 1) { // wide
+              drawW = finalSide; drawH = Math.round(finalSide / aspect);
+            } else { // tall
+              drawH = finalSide; drawW = Math.round(finalSide * aspect);
+            }
+            const offsetX = Math.round((finalSide - drawW)/2);
+            const offsetY = Math.round((finalSide - drawH)/2);
+            ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.generateMipmaps = true;
+            tex.minFilter = THREE.LinearMipmapLinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            try { tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch(e){}
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.encoding = encodingIsSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
+            tex.needsUpdate = true;
+            return tex;
+          } catch(e) {
+            console.warn('[DIAG] makePOTTextureFromImage failed', e);
+            return null;
+          }
+        }
+
+        // Decide encoding por tipo de mapa
+        function preferredEncodingForKey(key) {
+          // color-ish maps -> sRGB; normal/metalness/roughness -> Linear
+          if (!key) return THREE.sRGBEncoding;
+          const col = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
+          const linear = ['normalMap','metalnessMap','roughnessMap','bumpMap','displacementMap'];
+          if (col.includes(key)) return THREE.sRGBEncoding;
+          if (linear.includes(key)) return THREE.LinearEncoding;
+          return THREE.sRGBEncoding;
+        }
+
+        // diagnosticar una textura y aplicar correcciones POT/mipmaps/filtros/anisotropy
+        function diagnoseAndFixTexture(tex, key, renderer) {
+          if (!tex) return {ok:false, reason:'no tex'};
+          const info = {};
+          try {
+            const img = tex.image;
+            info.key = key;
+            info.isCanvasTexture = (tex instanceof THREE.CanvasTexture);
+            info.width = img ? (img.width || img.naturalWidth || 0) : (tex.image && tex.image.width ? tex.image.width : 0);
+            info.height = img ? (img.height || img.naturalHeight || 0) : (tex.image && tex.image.height ? tex.image.height : 0);
+            info.isPOT = isPowerOfTwo(info.width) && isPowerOfTwo(info.height);
+            info.generateMipmaps = !!tex.generateMipmaps;
+            info.minFilter = tex.minFilter;
+            info.magFilter = tex.magFilter;
+            info.encoding = tex.encoding;
+            // If image is small or not POT or generateMipmaps false -> try to replace
+            const rendererMax = renderer.capabilities.getMaxTextureSize();
+            let replaced = false;
+            // Choose desired target: at least TARGET_MIN_TEX, and POT
+            const desiredSide = Math.min(rendererMax, Math.max(TARGET_MIN_TEX, info.width, info.height));
+            // If texture image is available and < desired or not POT or missing mipmaps, create POT canvas texture
+            if (img && ((Math.max(info.width,info.height) < TARGET_MIN_TEX) || !info.isPOT || !info.generateMipmaps || info.minFilter === THREE.NearestFilter)) {
+              const encodingIsSRGB = (preferredEncodingForKey(key) === THREE.sRGBEncoding);
+              const newTex = makePOTTextureFromImage(img, desiredSide, renderer, encodingIsSRGB);
+              if (newTex) {
+                info.replaced = true;
+                info.replacedSize = `${newTex.image.width}x${newTex.image.height}`;
+                return {ok:true, info, newTex};
+              } else {
+                info.replaced = false;
+                return {ok:false, info, reason:'failed to create new texture'};
               }
-              console.log('[upsample] isMobile=', isMobile, 'shadowMapSize=', chosenSize, 'upscaleFactor=', effectiveUpscaleFactor);
-            } catch (e) {
-              console.warn('[upsample] renderer config error', e);
+            }
+            return {ok:true, info, newTex:null};
+          } catch(e) {
+            console.warn('[DIAG] diagnoseAndFixTexture error', e);
+            return {ok:false, reason:'exception', err:e};
+          }
+        }
+
+        // Preparar entidad glTF (solo sombras + diagnóstico + fixes texturas)
+        function prepareEntity(el) {
+          if (!el) return;
+          if (el.setAttribute) el.setAttribute('shadow','cast:true; receive:true');
+
+          el.addEventListener('model-loaded', () => {
+            const obj = el.getObject3D('mesh') || el.getObject3D('model');
+            if (!obj) { console.warn('[DIAG] model-loaded but no object3D'); return; }
+
+            const renderer = sceneEl.renderer;
+            const changedRecords = [];
+
+            obj.traverse(node => {
+              if (!node.isMesh) return;
+              node.castShadow = true;
+              node.receiveShadow = true;
+
+              if (!node.material) return;
+              const mats = Array.isArray(node.material) ? node.material : [node.material];
+              mats.forEach((mat, mi) => {
+                // for each possible texture key
+                const keys = ['map','emissiveMap','lightMap','aoMap','alphaMap','normalMap','roughnessMap','metalnessMap'];
+                keys.forEach(key => {
+                  if (!mat[key]) return;
+                  const tex = mat[key];
+                  const diag = diagnoseAndFixTexture(tex, key, renderer);
+                  if (diag && diag.ok && diag.newTex) {
+                    try {
+                      // replace on material key safely
+                      mat[key] = diag.newTex;
+                      mat.needsUpdate = true;
+                      changedRecords.push({mesh: node.name || node.id, materialIndex: mi, key, from:`${tex.image ? (tex.image.width + 'x' + tex.image.height) : 'unknown'}`, to: diag.info.replacedSize});
+                    } catch (e) {
+                      console.warn('[DIAG] failed to replace texture for', node.name, key, e);
+                    }
+                  } else if (diag && diag.ok && !diag.newTex) {
+                    // maybe just log the info
+                    console.log('[DIAG] texture ok:', node.name || node.id, 'matIdx',mi,'key',key, diag.info);
+                  } else {
+                    console.log('[DIAG] texture diag fail:', node.name || node.id, 'matIdx',mi,'key',key, diag.reason || diag);
+                  }
+                });
+              });
+
+            }); // traverse
+
+            if (changedRecords.length > 0) {
+              console.log('[DIAG] Replaced textures:', changedRecords);
+            } else {
+              console.log('[DIAG] No texture replacements needed for entity:', el.id || el.tagName);
             }
           });
 
-          // Helper: crear texture escalada desde una imagen HTMLImageElement usando canvas
-          function createUpscaledTextureFromImage(img, factor, renderer) {
-            try {
-              const w = img.width || img.naturalWidth || 256;
-              const h = img.height || img.naturalHeight || 256;
-              const newW = Math.max(1, Math.floor(w * factor));
-              const newH = Math.max(1, Math.floor(h * factor));
-              const canvas = document.createElement('canvas');
-              canvas.width = newW;
-              canvas.height = newH;
-              const ctx = canvas.getContext('2d');
-              ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'high';
-              // draw scaled
-              ctx.drawImage(img, 0, 0, newW, newH);
-              const newTex = new THREE.CanvasTexture(canvas);
-              newTex.generateMipmaps = true;
-              newTex.minFilter = THREE.LinearMipmapLinearFilter;
-              newTex.magFilter = THREE.LinearFilter;
-              try {
-                const maxAniso = renderer.capabilities.getMaxAnisotropy();
-                newTex.anisotropy = maxAniso;
-              } catch (e) {}
-              newTex.encoding = THREE.sRGBEncoding;
-              newTex.needsUpdate = true;
-              return newTex;
-            } catch (e) {
-              console.warn('[upsample] createUpscaledTextureFromImage failed', e);
-              return null;
-            }
+          // cached case (already loaded)
+          const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+          if (maybe) {
+            // simulate model-loaded handler
+            el.dispatchEvent(new Event('model-loaded'));
           }
+        }
 
-          // Reemplazar texturas pequeñas por versiones upscaled
-          function upsampleSmallTexturesInMaterial(mat, factor, renderer) {
-            if (!mat) return 0;
-            let changed = 0;
-            const keys = ['map','normalMap','roughnessMap','metalnessMap','emissiveMap','aoMap','lightMap','alphaMap'];
-            keys.forEach(k => {
-              const tex = mat[k];
-              if (!tex || !tex.image) return;
-              const img = tex.image;
-              const w = img.width || img.naturalWidth || 0;
-              const h = img.height || img.naturalHeight || 0;
-              if (Math.max(w,h) > 0 && Math.max(w,h) < MIN_TEX_SIZE) {
-                const up = createUpscaledTextureFromImage(img, factor, renderer);
-                if (up) {
-                  mat[k] = up;
-                  mat.needsUpdate = true;
-                  changed++;
-                  console.log(`[upsample] material ${mat.name || '(unnamed)'} replaced ${k} ${w}x${h} -> ${up.image.width}x${up.image.height}`);
-                }
-              }
-            });
-            return changed;
-          }
+        // apply to all current gltf-model elements
+        const nodes = sceneEl.querySelectorAll('[gltf-model]');
+        nodes.forEach(prepareEntity);
 
-          // Fix each mesh: enable shadows and upsample small textures (without touching other PBR params)
-          function prepareMesh(mesh) {
-            if (!mesh) return;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            // if array of materials or single
-            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-            let totalChanged = 0;
-            mats.forEach(mat => {
-              totalChanged += upsampleSmallTexturesInMaterial(mat, effectiveUpscaleFactor, sceneEl.renderer);
-            });
-            return totalChanged;
-          }
-
-          // Apply to a glTF entity when loaded
-          function prepareEntity(el) {
-            if (!el) return;
-            // don't modify materials besides potential upscaling; still set shadow attr
-            if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
-
-            el.addEventListener('model-loaded', () => {
-              const obj = el.getObject3D('mesh') || el.getObject3D('model');
-              if (!obj) return;
-              let changedCount = 0;
-              obj.traverse(node => {
-                if (node.isMesh) {
-                  changedCount += prepareMesh(node) || 0;
-                }
-              });
-              if (changedCount > 0) console.log('[upsample] total textures upscaled in entity', el.id || el.tagName, changedCount);
-            });
-
-            // cached case
-            const maybe = el.getObject3D('mesh') || el.getObject3D('model');
-            if (maybe) {
-              let c = 0;
-              maybe.traverse(node => { if (node.isMesh) c += prepareMesh(node) || 0; });
-              if (c > 0) console.log('[upsample] total (cached) upscaled textures in', el.id || el.tagName, c);
-            }
-          }
-
-          // Apply to all existing gltf-models
-          const gltfs = sceneEl.querySelectorAll('[gltf-model]');
-          gltfs.forEach(prepareEntity);
-
-          // Observe new ones
-          const mo = new MutationObserver(muts => {
-            muts.forEach(m => {
-              m.addedNodes.forEach(n => {
-                if (!(n instanceof Element)) return;
-                if (n.hasAttribute && n.hasAttribute('gltf-model')) prepareEntity(n);
-              });
+        // observe new nodes added dynamically
+        const mo = new MutationObserver(muts => {
+          muts.forEach(m => {
+            m.addedNodes.forEach(n => {
+              if (!(n instanceof Element)) return;
+              if (n.hasAttribute && n.hasAttribute('gltf-model')) prepareEntity(n);
             });
           });
-          mo.observe(sceneEl, { childList: true, subtree: true });
+        });
+        mo.observe(sceneEl, { childList:true, subtree:true });
 
-          // clamp rig to room bbox to keep inside the room
-          const rig = document.getElementById('rig');
-          let bbox = null;
+        // BBOX clamp (sin cambios)
+        const rig = document.getElementById('rig');
+        let bbox = null;
+        const room = document.getElementById('cuarto1_ent');
+        function computeBBox() {
+          const obj = room.getObject3D('mesh') || room.getObject3D('model');
+          if (!obj) return null;
+          return new THREE.Box3().setFromObject(obj);
+        }
+        room.addEventListener('model-loaded', ()=>{ bbox = computeBBox(); if (bbox) console.log('[DIAG] bbox',bbox.min,bbox.max) });
+        const rn = room.getObject3D('mesh') || room.getObject3D('model');
+        if (rn) bbox = computeBBox();
+        sceneEl.addEventListener('tick', ()=> {
+          if (!bbox || !rig) return;
+          const p = rig.object3D.position;
           const margin = 0.03;
-          function computeBBox() {
-            const obj = room.getObject3D('mesh') || room.getObject3D('model');
-            if (!obj) return null;
-            return new THREE.Box3().setFromObject(obj);
-          }
-          room.addEventListener('model-loaded', () => {
-            bbox = computeBBox();
-            if (bbox) console.log('[upsample] bbox min', bbox.min, 'max', bbox.max);
-          });
-          const rn = room.getObject3D('mesh') || room.getObject3D('model');
-          if (rn) bbox = computeBBox();
-          sceneEl.addEventListener('tick', () => {
-            if (!bbox || !rig) return;
-            const p = rig.object3D.position;
-            const minX = bbox.min.x + margin, maxX = bbox.max.x - margin;
-            const minZ = bbox.min.z + margin, maxZ = bbox.max.z - margin;
-            let changed = false;
-            if (p.x < minX) { p.x = minX; changed = true; }
-            if (p.x > maxX) { p.x = maxX; changed = true; }
-            if (p.z < minZ) { p.z = minZ; changed = true; }
-            if (p.z > maxZ) { p.z = maxZ; changed = true; }
-            if (changed) {
-              try {
-                const mc = rig.components['movement-controls'];
-                if (mc && mc.velocity) mc.velocity.set(0,0,0);
-              } catch(e){}
-            }
-          });
+          const minX = bbox.min.x + margin, maxX = bbox.max.x - margin;
+          const minZ = bbox.min.z + margin, maxZ = bbox.max.z - margin;
+          let changed=false;
+          if (p.x < minX) { p.x=minX; changed=true; }
+          if (p.x > maxX) { p.x=maxX; changed=true; }
+          if (p.z < minZ) { p.z=minZ; changed=true; }
+          if (p.z > maxZ) { p.z=maxZ; changed=true; }
+          if (changed) { try{ const mc = rig.components['movement-controls']; if(mc && mc.velocity) mc.velocity.set(0,0,0); }catch(e){} }
+        });
 
-        } // init
-      });
+      } // init
+    });
     </script>
 
   </a-scene>
