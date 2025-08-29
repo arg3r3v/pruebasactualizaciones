@@ -27,7 +27,8 @@
     #poema { padding: 20px; max-width: 900px; margin: 18px auto; }
     #ui-debug { position: fixed; right: 18px; top: 18px; z-index:9999; }
     #toggle-colliders { background:#111; color:#fff; border: none; padding:8px 12px; border-radius:6px; cursor:pointer; }
-    .debug-collider { opacity: 0.22 !important; }
+    /* Importante: NO mostramos colliders por defecto para evitar "líneas" en pantalla */
+    .debug-collider { opacity: 0 !important; }
   </style>
 </head>
 <body>
@@ -47,7 +48,7 @@
     <button id="toggle-colliders">Mostrar colliders (D)</button>
   </div>
 
-  <!-- ESCENA: cuarto con luz interior verde -->
+  <!-- ESCENA -->
   <a-scene embedded
            physics="gravity: 0 -9.8 0"
            shadow="type: pcfsoft"
@@ -65,11 +66,10 @@
       <a-asset-item id="personajeModel" src="models/personaje.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Ambiente muy tenue -->
+    <!-- Luz ambiental (suave) -->
     <a-entity light="type: ambient; intensity: 0.06; color: #080808"></a-entity>
 
-    <!-- LUZ INTERIOR VERDE (point + spot) -->
-    <!-- Posición cambiada a x:6 y:2 z:4 y ~10x intensidad -->
+    <!-- Tus luces verdes (NO las toco por script; tú decides posiciones/intensidad) -->
     <a-entity id="greenLamp"
               light="type: point; color: #2bff7a; intensity: 18; distance: 12; decay: 2"
               position="-6 4 8"></a-entity>
@@ -90,7 +90,7 @@
       </a-entity>
     </a-entity>
 
-    <!-- MODELOS: 6 secciones (visual only). Colliders se crean automáticamente desde JS -->
+    <!-- MODELOS: 6 secciones (visual only). Colliders se crean automáticamente desde JS para sec1 -->
     <a-entity id="sec1" gltf-model="#cuarto1" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
     <a-entity id="sec2" gltf-model="#cuarto2" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
     <a-entity id="sec3" gltf-model="#cuarto3" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
@@ -116,10 +116,13 @@
     </p>
   </div>
 
-  <!-- Script: genera colliders invisibles (a-box static-body) a partir del bounding box de cada sección -->
+<!-- ==== SCRIPT: sin tocar luces; quita líneas; colisiones en 'cuarto1'; centra cámara en 'cuarto1' ==== -->
 <script>
 (function(){
-  // Ejecutar cuando la escena esté cargada
+  const COLLIDER_CLASS = 'auto-collider';
+  const DEBUG_COLLIDER_CLASS = 'debug-collider'; // sólo para alternar visibilidad
+  const WALL_THICKNESS = 0.1; // paredes delgadas para colisión
+
   function waitForSceneReady(cb) {
     const scene = document.querySelector('a-scene');
     if (!scene) { console.warn('No a-scene en DOM'); return; }
@@ -128,154 +131,92 @@
   }
 
   waitForSceneReady(sceneEl => {
-    // Config
-    const SHADOW_MAP_SIZE = 2048;
-    const SHADOW_BIAS = 0.0005; // pequeño positivo
-    const LIGHT_DISTANCE = 20;
-    const SPOT_ANGLE = 1.0;
-    const FORCE_DOUBLE_SIDE = true;
-    const COLLIDER_CLASS = 'auto-collider';
-    const DEBUG_COLLIDER_CLASS = 'debug-collider';
-
-    // referencias
-    const greenPointEl = document.getElementById('greenLamp');
-    const greenSpotEl  = document.getElementById('greenSpot');
     const rig = document.getElementById('rig');
     const toggleBtn = document.getElementById('toggle-colliders');
+    const sec1 = document.getElementById('sec1'); // SOLO usamos cuarto1 como base de colisión
 
-    // --- Utilidades ---
-    function safeGetThree() { return window.THREE; }
-    const THREE = safeGetThree();
+    // --- Helpers ---
+    const THREE = window.THREE;
 
-    function applyRendererSettings() {
-      if (!sceneEl.renderer) return;
-      sceneEl.renderer.shadowMap.enabled = true;
-      sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
+    function computeBBoxOfEntity(entity) {
+      const obj = entity.getObject3D('mesh') || entity.object3D;
+      if (!obj) return null;
+      const box = new THREE.Box3().setFromObject(obj);
+      if (box.isEmpty()) return null;
+      const size = new THREE.Vector3(); box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+      const min = box.min.clone();
+      const max = box.max.clone();
+      return { box, size, center, min, max };
     }
 
-    function setLightParams(el, opts = {}) {
-      if (!el) return;
-      el.addEventListener('model-loaded', ()=>{}); // noop to ensure exists
-      setTimeout(()=>{ // small tick for three to create light
-        const lightObj = el.getObject3D && el.getObject3D('light');
-        if (!lightObj) { console.warn('No light object para', el && el.id); return; }
-        lightObj.castShadow = true;
-        if (lightObj.shadow) {
-          lightObj.shadow.mapSize.width = SHADOW_MAP_SIZE;
-          lightObj.shadow.mapSize.height = SHADOW_MAP_SIZE;
-          lightObj.shadow.bias = SHADOW_BIAS;
-          if (lightObj.shadow.camera) {
-            lightObj.shadow.camera.near = 0.1;
-            lightObj.shadow.camera.far = 100;
-            if (lightObj.shadow.camera.updateProjectionMatrix) lightObj.shadow.camera.updateProjectionMatrix();
-          }
-        }
-        if ('distance' in lightObj) lightObj.distance = opts.distance || LIGHT_DISTANCE;
-        if (lightObj.isSpotLight) lightObj.angle = opts.spotAngle || SPOT_ANGLE;
-        // log
-        console.log('Light params applied to', el.id, '->', { distance: lightObj.distance, angle: lightObj.angle });
-      }, 200);
-    }
+    function createRoomCollidersFromBBox(sceneEl, bbox) {
+      // Limpia colliders anteriores
+      sceneEl.querySelectorAll('.' + COLLIDER_CLASS).forEach(e => e.remove());
 
-    // convierte materiales unlit -> PBR conservando mapas básicos
-    function makeMaterialPBR(oldMat) {
-      if (!oldMat) return null;
-      if (oldMat.isMeshStandardMaterial) { oldMat.needsUpdate = true; return oldMat; }
-      const params = {};
-      ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap'].forEach(k => { if (oldMat[k]) params[k] = oldMat[k]; });
-      if (oldMat.color) params.color = oldMat.color.clone();
-      params.roughness = (typeof oldMat.roughness !== 'undefined') ? oldMat.roughness : 1.0;
-      params.metalness = (typeof oldMat.metalness !== 'undefined') ? oldMat.metalness : 0.0;
-      const newMat = new THREE.MeshStandardMaterial(params);
-      if (FORCE_DOUBLE_SIDE) newMat.side = THREE.DoubleSide;
-      newMat.needsUpdate = true;
-      return newMat;
-    }
+      const { size, center, min, max } = bbox;
 
-    // --- Center camera / rig to scene bounding box center ---
-    function centerRigInScene() {
-      // compute bounding box for whole scene content (ignora cámara/luces)
-      const root = sceneEl.object3D;
-      const bbox = new THREE.Box3().setFromObject(root);
-      if (!bbox || !bbox.isEmpty()) {
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
-        // Decide la Y: centro vertical exacto
-        const cx = center.x, cy = center.y, cz = center.z;
-        // Si quieres la cámara exactamente en el centro del cuarto (no cambiar movimiento),
-        // movemos el rig a la posición centro pero mantenemos la orientación y componentes de movimiento.
-        // NOTA: movement-controls espera que la posición inicial del rig sea la "posición del jugador".
-        if (rig) {
-          // preserve original x/z offsets? We'll set rig to center x,z and center y
-          rig.setAttribute('position', `${cx} ${cy} ${cz}`);
-          console.log('Rig reubicado al centro del bounding box:', { cx, cy, cz, size });
-        } else {
-          console.warn('No se encontró rig para centrar');
-        }
-      } else {
-        console.warn('Bounding box vacío; no se puede centrar camara');
+      // Piso
+      addBox(sceneEl, {
+        pos: [center.x, min.y + WALL_THICKNESS/2, center.z],
+        dim: [size.x, WALL_THICKNESS, size.z]
+      });
+
+      // Techo
+      addBox(sceneEl, {
+        pos: [center.x, max.y - WALL_THICKNESS/2, center.z],
+        dim: [size.x, WALL_THICKNESS, size.z]
+      });
+
+      // Pared +X
+      addBox(sceneEl, {
+        pos: [max.x - WALL_THICKNESS/2, center.y, center.z],
+        dim: [WALL_THICKNESS, size.y, size.z]
+      });
+
+      // Pared -X
+      addBox(sceneEl, {
+        pos: [min.x + WALL_THICKNESS/2, center.y, center.z],
+        dim: [WALL_THICKNESS, size.y, size.z]
+      });
+
+      // Pared +Z
+      addBox(sceneEl, {
+        pos: [center.x, center.y, max.z - WALL_THICKNESS/2],
+        dim: [size.x, size.y, WALL_THICKNESS]
+      });
+
+      // Pared -Z
+      addBox(sceneEl, {
+        pos: [center.x, center.y, min.z + WALL_THICKNESS/2],
+        dim: [size.x, size.y, WALL_THICKNESS]
+      });
+
+      function addBox(sceneEl, {pos, dim}) {
+        const e = document.createElement('a-box');
+        e.classList.add(COLLIDER_CLASS);
+        e.classList.add(DEBUG_COLLIDER_CLASS);
+        e.setAttribute('position', pos.join(' '));
+        e.setAttribute('width', dim[0]);
+        e.setAttribute('height', dim[1]);
+        e.setAttribute('depth', dim[2]);
+        e.setAttribute('static-body', 'shape: box;');
+        e.setAttribute('visible', 'false'); // IMPORTANTE: invisible por defecto (sin líneas raras)
+        sceneEl.appendChild(e);
       }
     }
 
-    // --- Crear colliders a partir de los meshes principales ---
-    function createCollidersForModels() {
-      // Remove previous auto colliders
-      const prev = sceneEl.querySelectorAll('.' + COLLIDER_CLASS);
-      prev.forEach(e => e.parentNode && e.parentNode.removeChild(e));
-
-      // recorrer cada entidad gltf-model y crear un a-box que cubra su bounding box
-      const modelEntities = sceneEl.querySelectorAll('[gltf-model]');
-      modelEntities.forEach(ent => {
-        const obj = ent.getObject3D('mesh') || ent.getObject3D('gltf');
-        if (!obj) {
-          // fallback: esperar al evento model-loaded
-          ent.addEventListener('model-loaded', () => { createColliderForEntity(ent); }, { once: true });
-        } else {
-          createColliderForEntity(ent);
-        }
+    function toggleCollidersVisibility(show) {
+      sceneEl.querySelectorAll('.' + COLLIDER_CLASS).forEach(e => {
+        e.setAttribute('visible', show ? 'true' : 'false');
       });
     }
 
-    function createColliderForEntity(ent) {
-      const threeObj = ent.getObject3D('mesh') || ent.getObject3D('gltf') || ent.object3D;
-      if (!threeObj) { console.warn('No three object para', ent.id); return; }
-      // computar bbox local en world space
-      const box = new THREE.Box3().setFromObject(threeObj);
-      if (box.isEmpty()) { console.warn('BBox vacío para', ent.id); return; }
-      const size = new THREE.Vector3(); box.getSize(size);
-      const center = new THREE.Vector3(); box.getCenter(center);
-      // crear a-box
-      const aBox = document.createElement('a-box');
-      aBox.classList.add(COLLIDER_CLASS);
-      aBox.classList.add(DEBUG_COLLIDER_CLASS); // visible con opacidad CSS
-      // convertimos a numeros (a-box usa escala = 1 para 1 unidad)
-      aBox.setAttribute('position', `${center.x} ${center.y} ${center.z}`);
-      aBox.setAttribute('width', size.x);
-      aBox.setAttribute('height', size.y);
-      aBox.setAttribute('depth', size.z);
-      // physics: static body para que choque con kinematic/dynamic del jugador
-      aBox.setAttribute('static-body', 'shape: box;');
-      aBox.setAttribute('visible', 'true'); // para debug, invisible por CSS si no quieres
-      aBox.style.pointerEvents = 'none';
-      // añadir al scene
-      sceneEl.appendChild(aBox);
-      console.log('Collider creado para', ent.id, 'pos/size:', center, size);
-    }
-
-    // Toggle colliders visibility
     function setupToggleUI() {
       if (!toggleBtn) return;
-      let shown = true;
+      let shown = false;
       const update = () => {
-        const items = sceneEl.querySelectorAll('.' + COLLIDER_CLASS);
-        items.forEach(i => {
-          // control por clase debug: si quieres invisible quitar DEBUG_COLLIDER_CLASS o CSS
-          if (shown) i.classList.add(DEBUG_COLLIDER_CLASS);
-          else i.classList.remove(DEBUG_COLLIDER_CLASS);
-        });
+        toggleCollidersVisibility(shown);
         toggleBtn.textContent = shown ? 'Ocultar colliders (D)' : 'Mostrar colliders (D)';
       };
       toggleBtn.addEventListener('click', () => { shown = !shown; update(); });
@@ -283,80 +224,41 @@
       update();
     }
 
-    // --- Más robust: asegurarnos que todos los meshes reciban/casten sombras ---
-    function forceCastReceiveOnce() {
-      sceneEl.object3D.traverse(node => {
-        if (node.isMesh) {
-          // si no tiene receiveShadow definido, poner true salvo que sea muy fino
-          if (typeof node.receiveShadow === 'undefined') node.receiveShadow = true;
-          node.castShadow = true;
-          // convertir materiales basic->standard si es necesario
-          if (node.material && node.material.isMeshBasicMaterial) {
-            const newMat = makeMaterialPBR(node.material);
-            if (newMat) node.material = newMat;
-          }
-        }
-      });
-      console.log('Cast/receive aplicado a meshes.');
+    function centerRigInSec1(bbox) {
+      if (!rig) return;
+      const c = bbox.center;
+      // Colocamos el RIG exactamente al centro del cuarto (X,Y,Z)
+      rig.setAttribute('position', `${c.x} ${c.y} ${c.z}`);
+      console.log('Rig centrado en cuarto1:', c);
     }
 
-    // --- Aplicar: renderer, luces, esperar carga completa de modelos, luego centrar y crear colliders ---
-    try {
-      applyRendererSettings();
+    // --- FLUJO ---
+    // No tocamos luces en absoluto (ni posición ni intensidad).
 
-      // 1) colocalas luces donde dijiste: Blender -6,2,4
-      if (greenPointEl) greenPointEl.setAttribute('position','-6 2 4');
-      if (greenSpotEl)  greenSpotEl.setAttribute('position','-6 2 4');
-
-      // Si quieres valores de intensidad iniciales sugeridos (ajusta visualmente):
-      if (greenPointEl) greenPointEl.setAttribute('light', 'type: point; color: #2bff7a; intensity: 800; distance: 10; decay: 2');
-      if (greenSpotEl)  greenSpotEl.setAttribute('light', 'type: spot;  color: #2bff7a; intensity: 400; distance: 12; angle: 0.9; penumbra: 0.6; decay: 2');
-
-      setLightParams(greenPointEl, { distance: 20 });
-      setLightParams(greenSpotEl, { distance: 20, spotAngle: 0.9 });
-
-      // 2) cuando TODOS los modelos hayan sido cargados (espera model-loaded en cada entidad)
-      const modelEntities = Array.from(sceneEl.querySelectorAll('[gltf-model]'));
-      let remaining = modelEntities.length;
-      if (remaining === 0) {
-        // nada que esperar: aplica de una vez
-        centerRigInScene();
-        forceCastReceiveOnce();
-        createCollidersForModels();
-        setupToggleUI();
+    // Esperamos a que sec1 cargue para calcular bbox y montar colisiones/cámara
+    if (sec1 && (sec1.getObject3D('mesh') || sec1.getObject3D('gltf'))) {
+      const bbox = computeBBoxOfEntity(sec1);
+      if (bbox) {
+        createRoomCollidersFromBBox(sceneEl, bbox);
+        centerRigInSec1(bbox);
       } else {
-        modelEntities.forEach(ent => {
-          // si ya cargado
-          if (ent.getObject3D('mesh') || ent.getObject3D('gltf')) {
-            remaining--;
-          } else {
-            ent.addEventListener('model-loaded', () => { remaining--; 
-              // tiny delay si quieres asegurar texturas
-              if (remaining<=0) {
-                setTimeout(()=> {
-                  centerRigInScene();
-                  forceCastReceiveOnce();
-                  createCollidersForModels();
-                  setupToggleUI();
-                }, 120);
-              }
-            }, { once: true });
-          }
-        });
-        // si todos estaban ya listos
-        if (remaining<=0) {
-          setTimeout(()=> {
-            centerRigInScene();
-            forceCastReceiveOnce();
-            createCollidersForModels();
-            setupToggleUI();
-          }, 120);
-        }
+        console.warn('No se pudo calcular bbox de sec1.');
       }
-
-      console.log('Script mejorado: listo. Revisa consola para detalles.');
-    } catch (e) {
-      console.error('Error en script mejorado:', e);
+      setupToggleUI();
+    } else if (sec1) {
+      sec1.addEventListener('model-loaded', () => {
+        const bbox = computeBBoxOfEntity(sec1);
+        if (bbox) {
+          createRoomCollidersFromBBox(sceneEl, bbox);
+          centerRigInSec1(bbox);
+        } else {
+          console.warn('No se pudo calcular bbox de sec1 (tras model-loaded).');
+        }
+        setupToggleUI();
+      }, { once: true });
+    } else {
+      console.warn('No existe #sec1 en la escena.');
+      setupToggleUI();
     }
   });
 })();
