@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Galería — Cuartos (corregido)</title>
+  <title>Galería — Cuartos (fix sombras adaptativo)</title>
 
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
@@ -28,29 +28,26 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- ********** IMPORTANTE: UNA SOLA INSTANCIA de cuarto1.
-         Aquí usamos la misma entidad para mostrar y para navmesh.
-         Si quieres ocultar la malla nav, usa visible="false" aquí (pero NO dupliques el glb). -->
+    <!-- UNA SOLA INSTANCIA de cuarto1: la usamos como geometría y navmesh -->
     <a-entity id="cuarto1_ent"
               gltf-model="#cuarto1"
               nav-mesh
               shadow="receive: true">
     </a-entity>
 
-    <!-- Los demás cuartos (cada uno una única vez) -->
     <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="receive: true"></a-entity>
     <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="receive: true"></a-entity>
     <a-entity id="cuarto4_ent" gltf-model="#cuarto4" shadow="receive: true"></a-entity>
     <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="receive: true"></a-entity>
     <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="receive: true"></a-entity>
 
-    <!-- ÚNICA LUZ INTERIOR: point light (bombilla) -->
+    <!-- LUZ INTERIOR (bombilla) -->
     <a-entity id="lamp"
               position="0 2.6 0"
               light="type: point; color: #ffffff; intensity: 6.0; distance: 40; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- RIG (movement-controls) -->
+    <!-- RIG -->
     <a-entity id="rig" position="0 0 2"
               movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
       <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
@@ -58,63 +55,129 @@
       </a-entity>
     </a-entity>
 
-    <!-- SCRIPT: configura renderer/shadows y prepara materiales -->
     <script>
-      AFRAME.registerSystem('correcciones-render', {
+      AFRAME.registerSystem('shadows-adaptive-fix', {
         init: function () {
           const sceneEl = this.el;
           const lamp = document.getElementById('lamp');
+          const room = document.getElementById('cuarto1_ent');
 
-          // valores ajustables
-          const SHADOW_MAP_SIZE = 4096; // calidad (sube a 4096 para menos pixelado, ojo rendimiento)
-          const PIXEL_RATIO_LIMIT = Math.min(window.devicePixelRatio || 1, 2);
+          // Heurística para elegir shadow map size según memoria y si es móvil
+          const ua = navigator.userAgent || '';
+          const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(ua);
+          const deviceMemory = navigator.deviceMemory || 4; // fallback 4GB if unknown
+          const logicalCores = navigator.hardwareConcurrency || 4;
 
-          // configurar renderer cuando esté listo
+          // Decide quality
+          let SHADOW_MAP_SIZE = 2048;
+          let SHADOW_TYPE = 'PCFSoft'; // fallback
+          if (!isMobile && deviceMemory >= 8 && logicalCores >= 8) {
+            SHADOW_MAP_SIZE = 8192;  // equipo potente => máxima calidad
+            SHADOW_TYPE = 'VSM';     // suavisado avanzado
+          } else if (!isMobile && deviceMemory >= 4) {
+            SHADOW_MAP_SIZE = 4096;
+            SHADOW_TYPE = 'VSM';
+          } else if (isMobile && deviceMemory >= 4) {
+            SHADOW_MAP_SIZE = 4096; // móviles potentes
+            SHADOW_TYPE = 'PCFSoft';
+          } else if (isMobile) {
+            SHADOW_MAP_SIZE = 1024; // móviles modestos
+            SHADOW_TYPE = 'PCFSoft';
+          } else {
+            SHADOW_MAP_SIZE = 2048;
+            SHADOW_TYPE = 'PCFSoft';
+          }
+
+          // apply renderer settings once ready
           sceneEl.addEventListener('render-target-loaded', () => {
             try {
               const renderer = sceneEl.renderer;
               if (!renderer) return;
-              renderer.setPixelRatio(PIXEL_RATIO_LIMIT);
+              // limit pixel ratio to avoid extreme pixelation/overload
+              const pr = Math.min(window.devicePixelRatio || 1, 2.0);
+              renderer.setPixelRatio(pr);
               renderer.outputEncoding = THREE.sRGBEncoding;
-              renderer.shadowMap.enabled = true;
-              renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-              renderer.physicallyCorrectLights = false; // control por intensidad
 
-              // configurar shadow map de la luz interior
-              const lightObj = lamp && lamp.getObject3D('light');
-              if (lightObj && lightObj.shadow) {
-                lightObj.shadow.mapSize.width = SHADOW_MAP_SIZE;
-                lightObj.shadow.mapSize.height = SHADOW_MAP_SIZE;
-                lightObj.shadow.radius = 2;    // bordes suaves
-                lightObj.shadow.bias = -0.0001; // bias pequeño para evitar acne
+              // shadow map type selection
+              if (SHADOW_TYPE === 'VSM' && THREE.VSMShadowMap) {
+                renderer.shadowMap.type = THREE.VSMShadowMap;
+              } else {
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
               }
-              console.log('[correcciones-render] renderer listo, pixelRatio=', PIXEL_RATIO_LIMIT, 'shadowMapSize=', SHADOW_MAP_SIZE);
-            } catch (e) {
-              console.warn('Error al configurar renderer:', e);
+              renderer.shadowMap.enabled = true;
+
+              // configure light
+              const light = lamp && lamp.getObject3D('light');
+              if (light && light.shadow) {
+                light.shadow.mapSize.width = SHADOW_MAP_SIZE;
+                light.shadow.mapSize.height = SHADOW_MAP_SIZE;
+                // radius hace sombras más suaves (pero puede difuminar, ajustar según taste)
+                light.shadow.radius = (SHADOW_MAP_SIZE >= 4096) ? 4 : 2;
+                light.shadow.bias = -0.00015;
+              }
+
+              console.log('[shadows-adaptive-fix] isMobile=', isMobile,
+                          'deviceMemoryGB=', deviceMemory,
+                          'cores=', logicalCores,
+                          'shadowSize=', SHADOW_MAP_SIZE,
+                          'shadowType=', renderer.shadowMap.type === THREE.VSMShadowMap ? 'VSM' : 'PCFSoft');
+            } catch (err) {
+              console.warn('Error al configurar renderer/shadows:', err);
             }
           });
 
-          // FIX: materiales y shadows (sin forzar DoubleSide salvo si detectamos normales invertidas)
-          function fixMaterialOnMesh(mesh) {
+          // Fix material encoding and envmaps (no forzar DoubleSide)
+          function fixMaterial(mesh) {
             if (!mesh || !mesh.material) return;
             const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
             mats.forEach(mat => {
               if (!mat) return;
               try {
-                // No forzamos DoubleSide por defecto (provoca artefactos). Solo corregimos encoding/envmap.
                 if (mat.map) mat.map.encoding = THREE.sRGBEncoding;
                 if (mat.emissiveMap) mat.emissiveMap.encoding = THREE.sRGBEncoding;
-                // Si el material depende de envMap, quitarlo para iluminación interior
-                if (mat.envMap) {
-                  mat.envMap = null;
-                  mat.envMapIntensity = 0;
-                }
+                if (mat.envMap) { mat.envMap = null; mat.envMapIntensity = 0; }
                 mat.needsUpdate = true;
-              } catch (err) { /* ignorar */ }
+              } catch (e) {}
             });
           }
 
-          // marca la entidad con shadow y aplica fixes al cargar
+          // Detectar mallas "sospechosas" que producen la sombra tipo cubo y desactivarlas
+          function detectAndDisableSuspectShadows(obj3d, lampWorldPos) {
+            const suspects = [];
+            obj3d.traverse(node => {
+              if (!node.isMesh) return;
+              const bbox = new THREE.Box3().setFromObject(node);
+              const size = new THREE.Vector3();
+              bbox.getSize(size);
+              const volume = size.x * size.y * size.z;
+              const center = new THREE.Vector3();
+              bbox.getCenter(center);
+              const distToLamp = center.distanceTo(lampWorldPos);
+
+              // Heurística: si la malla es pequeña pero proyecta una sombra fuerte justo bajo la lámpara
+              // (ej: objetos fantasma o planos pequeñitos), la marcamos para desactivar castShadow.
+              // Ajusta umbrales si es necesario.
+              if (volume > 0 && volume < 0.02 && size.y < 0.6 && distToLamp < 1.0) {
+                suspects.push({node, size, volume, distToLamp});
+              }
+              // otra heurística: mallas con nombres sospechosos
+              if (node.name && /plane|shadow|cube|quad/i.test(node.name)) {
+                if (!suspects.find(s => s.node === node)) suspects.push({node, size, volume, distToLamp});
+              }
+            });
+
+            // Desactivar castShadow en sospechosos (pero mantener receiveShadow)
+            suspects.forEach(s => {
+              try {
+                s.node.castShadow = false;
+                s.node.receiveShadow = true;
+                console.log('[shadows-adaptive-fix] disabled castShadow on suspect mesh:', s.node.name || s.node.id, 'size:', s.size, 'distToLamp:', s.distToLamp);
+              } catch (e) {}
+            });
+            return suspects.length;
+          }
+
+          // Prepara cada entidad gltf-model: fixes de material y shadows
           function prepareEntity(el) {
             if (!el) return;
             if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
@@ -122,33 +185,49 @@
             el.addEventListener('model-loaded', () => {
               const obj = el.getObject3D('mesh') || el.getObject3D('model');
               if (!obj) return;
+              // fix materials + enable shadows
               obj.traverse(node => {
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
-                  fixMaterialOnMesh(node);
+                  fixMaterial(node);
                 }
               });
+
+              // after a small timeout (ensure light has shadow map set), run suspect detector
+              setTimeout(() => {
+                try {
+                  const lightObj = lamp && lamp.object3D;
+                  const lampPos = lightObj ? lightObj.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0,2.6,0);
+                  const disabledCount = detectAndDisableSuspectShadows(obj, lampPos);
+                  if (disabledCount > 0) {
+                    console.log('[shadows-adaptive-fix] deshabilitados', disabledCount, 'objetos sospechosos de proyectar sombras fea.');
+                  }
+                } catch (e) { console.warn('Error en detectAndDisableSuspectShadows:', e); }
+              }, 250);
             });
 
-            // si ya cargado
+            // cached
             const maybe = el.getObject3D('mesh') || el.getObject3D('model');
             if (maybe) {
               maybe.traverse(node => {
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
-                  fixMaterialOnMesh(node);
+                  fixMaterial(node);
                 }
               });
+              // detectar sospechosos inmediatamente
+              const lampPos = lamp.object3D ? lamp.object3D.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0,2.6,0);
+              detectAndDisableSuspectShadows(maybe, lampPos);
             }
           }
 
-          // aplicar a todos los gltf-model
-          const allGltfs = sceneEl.querySelectorAll('[gltf-model]');
-          allGltfs.forEach(prepareEntity);
+          // aplicar a todos los gltf-model existentes
+          const gltfs = sceneEl.querySelectorAll('[gltf-model]');
+          gltfs.forEach(prepareEntity);
 
-          // observer para nuevos
+          // observar nuevos añadidos
           const mo = new MutationObserver(muts => {
             muts.forEach(m => {
               m.addedNodes.forEach(n => {
@@ -159,27 +238,21 @@
           });
           mo.observe(sceneEl, { childList: true, subtree: true });
 
-          // --- Clamp del rig al bounding box del cuarto1_ent (evita salir del cuarto) ---
+          // Clamp: evitar salir del cuarto usando bounding box del cuarto1_ent
           const rig = document.getElementById('rig');
-          const room = document.getElementById('cuarto1_ent');
           let bbox = null;
           const margin = 0.03;
-
           function computeBBox() {
             const obj = room.getObject3D('mesh') || room.getObject3D('model');
             if (!obj) return null;
             return new THREE.Box3().setFromObject(obj);
           }
-
           room.addEventListener('model-loaded', () => {
             bbox = computeBBox();
-            if (bbox) console.log('[bbox] min:', bbox.min, 'max:', bbox.max);
-            else console.warn('[bbox] no pude calcularla');
+            if (bbox) console.log('[bbox] calculada', bbox.min, bbox.max);
           });
-
-          const roomNow = room.getObject3D('mesh') || room.getObject3D('model');
-          if (roomNow) bbox = computeBBox();
-
+          const rn = room.getObject3D('mesh') || room.getObject3D('model');
+          if (rn) bbox = computeBBox();
           sceneEl.addEventListener('tick', () => {
             if (!bbox || !rig) return;
             const p = rig.object3D.position;
@@ -201,7 +274,6 @@
         } // init
       });
     </script>
-
   </a-scene>
 </body>
 </html>
