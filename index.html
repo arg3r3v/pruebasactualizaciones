@@ -119,210 +119,246 @@
   <!-- Script: genera colliders invisibles (a-box static-body) a partir del bounding box de cada sección -->
 <script>
 (function(){
-  // Ejecutar cuando el renderer esté disponible
-  const runWhenReady = () => {
-    const sceneEl = document.querySelector('a-scene');
-    if (!sceneEl) { console.warn('No a-scene'); return; }
+  // Ejecutar cuando la escena esté cargada
+  function waitForSceneReady(cb) {
+    const scene = document.querySelector('a-scene');
+    if (!scene) { console.warn('No a-scene en DOM'); return; }
+    if (scene.hasLoaded) return cb(scene);
+    scene.addEventListener('loaded', () => cb(scene), { once: true });
+  }
 
-    // Tus luces / entidades (asegúrate que IDs coincidan)
-    const greenPointEl = document.getElementById('greenLamp');
-    const greenSpotEl  = document.getElementById('greenSpot');
-
-    // Parámetros que ajustamos (si quieres, cambia)
-    const SHADOW_MAP_SIZE = 2048; // 2048 es buen balance; 4096 = más detalle pero caro
-    const SHADOW_BIAS = -0.0005;
-    const LIGHT_DISTANCE = 20; // asegurar que la luz alcance el piso
+  waitForSceneReady(sceneEl => {
+    // Config
+    const SHADOW_MAP_SIZE = 2048;
+    const SHADOW_BIAS = 0.0005; // pequeño positivo
+    const LIGHT_DISTANCE = 20;
     const SPOT_ANGLE = 1.0;
     const FORCE_DOUBLE_SIDE = true;
+    const COLLIDER_CLASS = 'auto-collider';
+    const DEBUG_COLLIDER_CLASS = 'debug-collider';
 
-    // Utilidades
-    function setLightParams(el) {
+    // referencias
+    const greenPointEl = document.getElementById('greenLamp');
+    const greenSpotEl  = document.getElementById('greenSpot');
+    const rig = document.getElementById('rig');
+    const toggleBtn = document.getElementById('toggle-colliders');
+
+    // --- Utilidades ---
+    function safeGetThree() { return window.THREE; }
+    const THREE = safeGetThree();
+
+    function applyRendererSettings() {
+      if (!sceneEl.renderer) return;
+      sceneEl.renderer.shadowMap.enabled = true;
+      sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
+    }
+
+    function setLightParams(el, opts = {}) {
       if (!el) return;
-      setTimeout(()=>{ // esperar a que three cree el objeto
+      el.addEventListener('model-loaded', ()=>{}); // noop to ensure exists
+      setTimeout(()=>{ // small tick for three to create light
         const lightObj = el.getObject3D && el.getObject3D('light');
-        if (!lightObj) { console.warn('light object no encontrado para', el.id); return; }
+        if (!lightObj) { console.warn('No light object para', el && el.id); return; }
         lightObj.castShadow = true;
         if (lightObj.shadow) {
           lightObj.shadow.mapSize.width = SHADOW_MAP_SIZE;
           lightObj.shadow.mapSize.height = SHADOW_MAP_SIZE;
           lightObj.shadow.bias = SHADOW_BIAS;
-          // punto: ajustar far (para pointlights)
-          if (typeof lightObj.shadow.camera !== 'undefined') {
+          if (lightObj.shadow.camera) {
             lightObj.shadow.camera.near = 0.1;
             lightObj.shadow.camera.far = 100;
             if (lightObj.shadow.camera.updateProjectionMatrix) lightObj.shadow.camera.updateProjectionMatrix();
           }
         }
-        // aumentar distancia si existe (point/spot)
-        if ('distance' in lightObj) lightObj.distance = LIGHT_DISTANCE;
-        if (lightObj.isSpotLight) {
-          lightObj.angle = SPOT_ANGLE;
-        }
-        console.log('Light params aplicados a', el.id);
+        if ('distance' in lightObj) lightObj.distance = opts.distance || LIGHT_DISTANCE;
+        if (lightObj.isSpotLight) lightObj.angle = opts.spotAngle || SPOT_ANGLE;
+        // log
+        console.log('Light params applied to', el.id, '->', { distance: lightObj.distance, angle: lightObj.angle });
       }, 200);
     }
 
-    // Reemplaza un MeshBasicMaterial (unlit) por un MeshStandardMaterial copiando texturas
+    // convierte materiales unlit -> PBR conservando mapas básicos
     function makeMaterialPBR(oldMat) {
       if (!oldMat) return null;
-      // If it's already standard, keep it
-      if (oldMat.isMeshStandardMaterial) {
-        oldMat.needsUpdate = true;
-        return oldMat;
-      }
-      // Create new standard material and copy maps & basic props
+      if (oldMat.isMeshStandardMaterial) { oldMat.needsUpdate = true; return oldMat; }
       const params = {};
-      if (oldMat.map) params.map = oldMat.map;
-      if (oldMat.normalMap) params.normalMap = oldMat.normalMap;
-      if (oldMat.roughnessMap) params.roughnessMap = oldMat.roughnessMap;
-      if (oldMat.metalnessMap) params.metalnessMap = oldMat.metalnessMap;
-      if (oldMat.aoMap) params.aoMap = oldMat.aoMap;
-      // try copy color if exists
+      ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap'].forEach(k => { if (oldMat[k]) params[k] = oldMat[k]; });
       if (oldMat.color) params.color = oldMat.color.clone();
-      // conservative defaults
       params.roughness = (typeof oldMat.roughness !== 'undefined') ? oldMat.roughness : 1.0;
       params.metalness = (typeof oldMat.metalness !== 'undefined') ? oldMat.metalness : 0.0;
-
       const newMat = new THREE.MeshStandardMaterial(params);
-      // keep doubleSided if requested
       if (FORCE_DOUBLE_SIDE) newMat.side = THREE.DoubleSide;
       newMat.needsUpdate = true;
       return newMat;
     }
 
-    // Detectar candidatos a floor: por nombre o por mayor area XZ
-    function detectFloorCandidates() {
-      const meshes = [];
-      sceneEl.object3D.traverse(node => {
-        if (node.isMesh) meshes.push(node);
-      });
-      if (meshes.length === 0) { console.warn('No se encontraron meshes en escena'); return []; }
-
-      // buscar por nombre heurístico
-      const lower = ['floor','piso','ground','tile','tiles','suelo','floor_plane'];
-      const byName = meshes.filter(m => {
-        if (!m.name) return false;
-        const n = m.name.toLowerCase();
-        return lower.some(k => n.includes(k));
-      });
-      if (byName.length) {
-        console.log('Pisos encontrados por nombre:', byName.map(m=>m.name));
-        return byName;
-      }
-
-      // si no hay por nombre, elegir las 1-2 meshes con mayor área XZ (bounding box)
-      const meshAreas = meshes.map(m => {
-        const bb = new THREE.Box3().setFromObject(m);
-        const size = new THREE.Vector3(); bb.getSize(size);
-        const area = size.x * size.z;
-        return { m, area, size, name: m.name || '(unnamed)' };
-      });
-      meshAreas.sort((a,b)=>b.area-a.area);
-      const top = meshAreas.slice(0,2).map(x => x.m);
-      console.log('Pisos detectados por tamaño (top):', meshAreas.slice(0,3).map(x=>({name:x.name,area:x.area,size:x.size})));
-      return top;
-    }
-
-    // Forzar receiveShadow y reemplazar material si es necesario
-    function fixFloorMesh(mesh) {
-      console.log('Procesando posible piso:', mesh.name || mesh.uuid);
-      mesh.receiveShadow = true;
-      mesh.castShadow = false; // el piso normalmente no castea sombras
-
-      // comprobar material(s)
-      if (Array.isArray(mesh.material)) {
-        mesh.material.forEach((mat, i) => {
-          if (mat && mat.isMeshBasicMaterial) {
-            const newMat = makeMaterialPBR(mat);
-            if (newMat) {
-              mesh.material[i] = newMat;
-              console.log(`Material del submesh ${i} (basic) reemplazado por MeshStandardMaterial`);
-            }
-          } else if (mat && !mat.isMeshStandardMaterial) {
-            // otros tipos: intentar promover a standard conservando mapas
-            const newMat = makeMaterialPBR(mat);
-            if (newMat) mesh.material[i] = newMat;
-          }
-          if (mesh.material[i]) {
-            mesh.material[i].needsUpdate = true;
-            mesh.material[i].side = THREE.DoubleSide; // evitar problemas de normales invertidas
-          }
-        });
+    // --- Center camera / rig to scene bounding box center ---
+    function centerRigInScene() {
+      // compute bounding box for whole scene content (ignora cámara/luces)
+      const root = sceneEl.object3D;
+      const bbox = new THREE.Box3().setFromObject(root);
+      if (!bbox || !bbox.isEmpty()) {
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        // Decide la Y: centro vertical exacto
+        const cx = center.x, cy = center.y, cz = center.z;
+        // Si quieres la cámara exactamente en el centro del cuarto (no cambiar movimiento),
+        // movemos el rig a la posición centro pero mantenemos la orientación y componentes de movimiento.
+        // NOTA: movement-controls espera que la posición inicial del rig sea la "posición del jugador".
+        if (rig) {
+          // preserve original x/z offsets? We'll set rig to center x,z and center y
+          rig.setAttribute('position', `${cx} ${cy} ${cz}`);
+          console.log('Rig reubicado al centro del bounding box:', { cx, cy, cz, size });
+        } else {
+          console.warn('No se encontró rig para centrar');
+        }
       } else {
-        const mat = mesh.material;
-        if (mat && mat.isMeshBasicMaterial) {
-          const newMat = makeMaterialPBR(mat);
-          if (newMat) mesh.material = newMat;
-          console.log('Material del piso reemplazado por MeshStandardMaterial (era MeshBasicMaterial)');
-        } else if (mat && !mat.isMeshStandardMaterial) {
-          // promover si no es standard
-          const newMat = makeMaterialPBR(mat);
-          if (newMat) mesh.material = newMat;
-        }
-        if (mesh.material) {
-          mesh.material.needsUpdate = true;
-          mesh.material.side = THREE.DoubleSide;
-        }
+        console.warn('Bounding box vacío; no se puede centrar camara');
       }
-
-      // Forzar recompute normals si están raras
-      if (mesh.geometry && mesh.geometry.attributes && !mesh.geometry.attributes.normal) {
-        mesh.geometry.computeVertexNormals();
-      }
-      console.log('Piso preparado para recibir sombras.');
     }
 
-    // MAIN
-    try {
-      // 1) force renderer settings
-      if (sceneEl.renderer) {
-        sceneEl.renderer.shadowMap.enabled = true;
-        sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
-      }
+    // --- Crear colliders a partir de los meshes principales ---
+    function createCollidersForModels() {
+      // Remove previous auto colliders
+      const prev = sceneEl.querySelectorAll('.' + COLLIDER_CLASS);
+      prev.forEach(e => e.parentNode && e.parentNode.removeChild(e));
 
-      // 2) set params on lights
-      setLightParams(greenPointEl);
-      setLightParams(greenSpotEl);
-
-      // 3) find floors and patch them
-      // wait a tick to ensure glTF models loaded
-      setTimeout(() => {
-        const floors = detectFloorCandidates();
-        if (floors.length === 0) {
-          console.warn('No se detectó piso por nombre ni por tamaño. Intenta inspeccionar nombres de meshes en el glTF viewer.');
+      // recorrer cada entidad gltf-model y crear un a-box que cubra su bounding box
+      const modelEntities = sceneEl.querySelectorAll('[gltf-model]');
+      modelEntities.forEach(ent => {
+        const obj = ent.getObject3D('mesh') || ent.getObject3D('gltf');
+        if (!obj) {
+          // fallback: esperar al evento model-loaded
+          ent.addEventListener('model-loaded', () => { createColliderForEntity(ent); }, { once: true });
+        } else {
+          createColliderForEntity(ent);
         }
-        floors.forEach(f => fixFloorMesh(f));
-      }, 500);
+      });
+    }
 
-      // 4) also traverse each loaded model and enable cast/receive on all meshes (safety)
-      setTimeout(() => {
-        sceneEl.object3D.traverse(node => {
-          if (node.isMesh) {
-            node.castShadow = true;
-            node.receiveShadow = node.receiveShadow || false; // no sobreescribir piso decision
+    function createColliderForEntity(ent) {
+      const threeObj = ent.getObject3D('mesh') || ent.getObject3D('gltf') || ent.object3D;
+      if (!threeObj) { console.warn('No three object para', ent.id); return; }
+      // computar bbox local en world space
+      const box = new THREE.Box3().setFromObject(threeObj);
+      if (box.isEmpty()) { console.warn('BBox vacío para', ent.id); return; }
+      const size = new THREE.Vector3(); box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+      // crear a-box
+      const aBox = document.createElement('a-box');
+      aBox.classList.add(COLLIDER_CLASS);
+      aBox.classList.add(DEBUG_COLLIDER_CLASS); // visible con opacidad CSS
+      // convertimos a numeros (a-box usa escala = 1 para 1 unidad)
+      aBox.setAttribute('position', `${center.x} ${center.y} ${center.z}`);
+      aBox.setAttribute('width', size.x);
+      aBox.setAttribute('height', size.y);
+      aBox.setAttribute('depth', size.z);
+      // physics: static body para que choque con kinematic/dynamic del jugador
+      aBox.setAttribute('static-body', 'shape: box;');
+      aBox.setAttribute('visible', 'true'); // para debug, invisible por CSS si no quieres
+      aBox.style.pointerEvents = 'none';
+      // añadir al scene
+      sceneEl.appendChild(aBox);
+      console.log('Collider creado para', ent.id, 'pos/size:', center, size);
+    }
 
-            // If any mesh uses MeshBasicMaterial (unlit) and we want it lit, convert
-            if (node.material && node.material.isMeshBasicMaterial) {
-              // Convert but keep textures
-              const newMat = makeMaterialPBR(node.material);
-              if (newMat) node.material = newMat;
-            }
+    // Toggle colliders visibility
+    function setupToggleUI() {
+      if (!toggleBtn) return;
+      let shown = true;
+      const update = () => {
+        const items = sceneEl.querySelectorAll('.' + COLLIDER_CLASS);
+        items.forEach(i => {
+          // control por clase debug: si quieres invisible quitar DEBUG_COLLIDER_CLASS o CSS
+          if (shown) i.classList.add(DEBUG_COLLIDER_CLASS);
+          else i.classList.remove(DEBUG_COLLIDER_CLASS);
+        });
+        toggleBtn.textContent = shown ? 'Ocultar colliders (D)' : 'Mostrar colliders (D)';
+      };
+      toggleBtn.addEventListener('click', () => { shown = !shown; update(); });
+      window.addEventListener('keydown', (ev)=> { if (ev.key.toLowerCase()==='d') { shown = !shown; update(); } });
+      update();
+    }
+
+    // --- Más robust: asegurarnos que todos los meshes reciban/casten sombras ---
+    function forceCastReceiveOnce() {
+      sceneEl.object3D.traverse(node => {
+        if (node.isMesh) {
+          // si no tiene receiveShadow definido, poner true salvo que sea muy fino
+          if (typeof node.receiveShadow === 'undefined') node.receiveShadow = true;
+          node.castShadow = true;
+          // convertir materiales basic->standard si es necesario
+          if (node.material && node.material.isMeshBasicMaterial) {
+            const newMat = makeMaterialPBR(node.material);
+            if (newMat) node.material = newMat;
+          }
+        }
+      });
+      console.log('Cast/receive aplicado a meshes.');
+    }
+
+    // --- Aplicar: renderer, luces, esperar carga completa de modelos, luego centrar y crear colliders ---
+    try {
+      applyRendererSettings();
+
+      // 1) colocalas luces donde dijiste: Blender -6,2,4
+      if (greenPointEl) greenPointEl.setAttribute('position','-6 2 4');
+      if (greenSpotEl)  greenSpotEl.setAttribute('position','-6 2 4');
+
+      // Si quieres valores de intensidad iniciales sugeridos (ajusta visualmente):
+      if (greenPointEl) greenPointEl.setAttribute('light', 'type: point; color: #2bff7a; intensity: 800; distance: 10; decay: 2');
+      if (greenSpotEl)  greenSpotEl.setAttribute('light', 'type: spot;  color: #2bff7a; intensity: 400; distance: 12; angle: 0.9; penumbra: 0.6; decay: 2');
+
+      setLightParams(greenPointEl, { distance: 20 });
+      setLightParams(greenSpotEl, { distance: 20, spotAngle: 0.9 });
+
+      // 2) cuando TODOS los modelos hayan sido cargados (espera model-loaded en cada entidad)
+      const modelEntities = Array.from(sceneEl.querySelectorAll('[gltf-model]'));
+      let remaining = modelEntities.length;
+      if (remaining === 0) {
+        // nada que esperar: aplica de una vez
+        centerRigInScene();
+        forceCastReceiveOnce();
+        createCollidersForModels();
+        setupToggleUI();
+      } else {
+        modelEntities.forEach(ent => {
+          // si ya cargado
+          if (ent.getObject3D('mesh') || ent.getObject3D('gltf')) {
+            remaining--;
+          } else {
+            ent.addEventListener('model-loaded', () => { remaining--; 
+              // tiny delay si quieres asegurar texturas
+              if (remaining<=0) {
+                setTimeout(()=> {
+                  centerRigInScene();
+                  forceCastReceiveOnce();
+                  createCollidersForModels();
+                  setupToggleUI();
+                }, 120);
+              }
+            }, { once: true });
           }
         });
-        console.log('Force cast/receive en todos los meshes aplicado.');
-      }, 900);
+        // si todos estaban ya listos
+        if (remaining<=0) {
+          setTimeout(()=> {
+            centerRigInScene();
+            forceCastReceiveOnce();
+            createCollidersForModels();
+            setupToggleUI();
+          }, 120);
+        }
+      }
 
-      // 5) Final notice:
-      console.log('Script de debug y corrección de piso/sombras: ejecutado. Revisa la consola para mensajes detallados.');
-    } catch (err) {
-      console.error('Error al intentar corregir sombras en piso:', err);
+      console.log('Script mejorado: listo. Revisa consola para detalles.');
+    } catch (e) {
+      console.error('Error en script mejorado:', e);
     }
-  };
-
-  // Ejecutar cuando Three/renderer listos
-  if (document.readyState === 'complete') runWhenReady();
-  else window.addEventListener('load', runWhenReady);
+  });
 })();
 </script>
 
