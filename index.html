@@ -118,78 +118,165 @@
 
   <!-- Script: genera colliders invisibles (a-box static-body) a partir del bounding box de cada sección -->
   <script>
-  (function () {
-    const sceneEl = document.querySelector('a-scene');
-    const sectionIds = ['sec1','sec2','sec3','sec4','sec5','sec6'];
-    const created = [];
-    let visible = false;
+(function(){
+  // -------------------------------------------------
+  // CONFIG (cámbialo si quieres otra posición/int)
+  // -------------------------------------------------
+  const DESIRED_LIGHT_POS = new THREE.Vector3(-6, 2, 4); // posición deseada en world coords
+  const POINT_INTENSITY_MULT = 1; // ya aumentaste intensidad en HTML; dejar 1
+  const LAMP_NAME_CANDIDATES = ['lamp','lampara','light','bulb','bombilla','lampholder','lamp_head','lampara_geo','lampara_']; // substrings para buscar
+  const SECTION_IDS = ['sec1','sec2','sec3','sec4','sec5','sec6']; // tus entidades
+  // -------------------------------------------------
 
-    function quatToEulerDeg(q) {
-      const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
-      return { x: THREE.Math.radToDeg(e.x), y: THREE.Math.radToDeg(e.y), z: THREE.Math.radToDeg(e.z) };
-    }
+  const sceneEl = document.querySelector('a-scene');
+  const greenPointEl = document.getElementById('greenLamp');
+  const greenSpotEl  = document.getElementById('greenSpot');
 
-    function createCollider(center, size, quat, name) {
-      const box = document.createElement('a-box');
-      box.setAttribute('position', `${center.x.toFixed(3)} ${center.y.toFixed(3)} ${center.z.toFixed(3)}`);
-      box.setAttribute('width', Math.max(size.x, 0.01).toFixed(3));
-      box.setAttribute('height', Math.max(size.y, 0.01).toFixed(3));
-      box.setAttribute('depth', Math.max(size.z, 0.01).toFixed(3));
-      const e = quatToEulerDeg(quat);
-      box.setAttribute('rotation', `${e.x.toFixed(3)} ${e.y.toFixed(3)} ${e.z.toFixed(3)}`);
-      box.setAttribute('visible', 'false');
-      box.setAttribute('material', 'color: #00ff00; opacity: 0.25; side: double;');
-      box.setAttribute('static-body', '');
-      box.setAttribute('id', `collider-${name}`);
-      sceneEl.appendChild(box);
-      created.push(box);
-      return box;
-    }
+  function enableShadowsOnModel(model) {
+    model.traverse(node => {
+      if (node.isMesh) {
+        node.castShadow = true;
+        node.receiveShadow = true;
+        if (node.material) node.material.needsUpdate = true;
+      }
+    });
+  }
 
-    function handleModelLoaded(entId) {
-      const ent = document.getElementById(entId);
-      if (!ent) return;
-      ent.addEventListener('model-loaded', (evt) => {
-        try {
-          const model = evt.detail.model;
-          const bbox = new THREE.Box3().setFromObject(model);
-          const size = new THREE.Vector3(); bbox.getSize(size);
-          const center = new THREE.Vector3(); bbox.getCenter(center);
-          const quat = new THREE.Quaternion(); model.getWorldQuaternion(quat);
-          size.multiplyScalar(0.98);
-          createCollider(center, size, quat, entId);
-        } catch (err) {
-          console.warn('Error generando collider para', entId, err);
+  // Busca una mesh que parezca lámpara dentro del model (nombre contiene algun candidato)
+  function findLampMesh(model) {
+    let found = null;
+    model.traverse(node => {
+      if (found) return;
+      if (node.isMesh && node.name) {
+        const n = node.name.toLowerCase();
+        for (const cand of LAMP_NAME_CANDIDATES) {
+          if (n.includes(cand)) { found = node; break; }
         }
-      });
-    }
+      }
+    });
+    return found;
+  }
 
-    sectionIds.forEach(id => handleModelLoaded(id));
-    window.addEventListener('load', () => {
-      sectionIds.forEach(id => {
-        const ent = document.getElementById(id);
-        if (!ent) return;
-        const obj = ent.getObject3D('mesh') || ent.getObject3D('gltf') || ent.getObject3D('object3D');
-        if (obj) ent.emit('model-loaded', { model: obj }, false);
-      });
+  // Mueve la luz (elemento A-Frame) a la posición global deseada
+  function setLightPosition(el, vec3) {
+    if (!el) return;
+    el.setAttribute('position', `${vec3.x.toFixed(3)} ${vec3.y.toFixed(3)} ${vec3.z.toFixed(3)}`);
+  }
+
+  // Mueve la malla de la lampara dentro de su jerarquía para que su world position sea igual a desiredPos
+  function moveMeshToWorldPosition(mesh, desiredWorldPos) {
+    if (!mesh) return false;
+    const parent = mesh.parent;
+    if (!parent) return false;
+    // convert desired world pos to parent's local space
+    const localPos = new THREE.Vector3();
+    parent.worldToLocal(localPos.copy(desiredWorldPos));
+    // set mesh.position (local)
+    mesh.position.copy(localPos);
+    // actualizar matrices
+    mesh.updateMatrix();
+    mesh.updateMatrixWorld(true);
+    return true;
+  }
+
+  // Ajustar shadow map quality en three.js para las luces indicadas
+  function boostShadowQuality(lightElId) {
+    const el = document.getElementById(lightElId);
+    if (!el) return;
+    setTimeout(()=>{
+      const lightObj = el.getObject3D('light');
+      if (!lightObj) return;
+      lightObj.castShadow = true;
+      if (lightObj.shadow) {
+        // resolución razonable por defecto: 2048 (subir si tu GPU aguanta)
+        lightObj.shadow.mapSize.width = 2048;
+        lightObj.shadow.mapSize.height = 2048;
+        lightObj.shadow.bias = -0.0005;
+        if (lightObj.shadow.camera) {
+          lightObj.shadow.camera.near = 0.1;
+          lightObj.shadow.camera.far = 50;
+          // para spot/directional ajustamos frustum/camera si existe
+          if (lightObj.shadow.camera.left !== undefined) {
+            const s = 8;
+            lightObj.shadow.camera.left = -s;
+            lightObj.shadow.camera.right = s;
+            lightObj.shadow.camera.top = s;
+            lightObj.shadow.camera.bottom = -s;
+          }
+          lightObj.shadow.camera.updateProjectionMatrix();
+        }
+      }
+    }, 200);
+  }
+
+  // MAIN: procesar cada sección cuando cargue
+  SECTION_IDS.forEach(id => {
+    const ent = document.getElementById(id);
+    if (!ent) return;
+    ent.addEventListener('model-loaded', (ev) => {
+      try {
+        const model = ev.detail.model; // THREE.Object3D root
+        // 1) habilitar sombras en todos los meshes (piso incl.)
+        enableShadowsOnModel(model);
+
+        // 2) buscar si dentro de este model existe la malla de la lampara
+        const lampMesh = findLampMesh(model);
+        if (lampMesh) {
+          // mover la malla para que coincida con DESIRED_LIGHT_POS (world)
+          const moved = moveMeshToWorldPosition(lampMesh, DESIRED_LIGHT_POS);
+          console.log(`Lamp mesh encontrada en ${id} (${lampMesh.name}), moved: ${moved}`);
+          // opcional: si quieres ajustar orientación, puedes rotar mesh.rotation.set(...)
+        }
+      } catch (err) {
+        console.warn('Error al procesar model-loaded', id, err);
+      }
+    }, { once: true });
+  });
+
+  // Si modelos ya estaban cacheados/ya cargados antes del listener
+  window.addEventListener('load', () => {
+    SECTION_IDS.forEach(id => {
+      const ent = document.getElementById(id);
+      if (!ent) return;
+      const obj = ent.getObject3D('mesh') || ent.getObject3D('gltf') || ent.getObject3D('object3D');
+      if (obj) {
+        // emular evento
+        ent.emit('model-loaded', { model: obj }, false);
+      }
     });
 
-    function setVisible(v) {
-      visible = !!v;
-      created.forEach(c => {
-        c.setAttribute('visible', visible ? 'true' : 'false');
-        if (visible) c.classList.add('debug-collider'); else c.classList.remove('debug-collider');
-      });
-      document.getElementById('toggle-colliders').textContent = visible ? 'Ocultar colliders (D)' : 'Mostrar colliders (D)';
+    // 3) colocar las luces en la posición deseada (independiente de las mallas)
+    setLightPosition(greenPointEl, DESIRED_LIGHT_POS);
+    setLightPosition(greenSpotEl, DESIRED_LIGHT_POS);
+
+    // 4) forzar renderer settings
+    const renderer = sceneEl.renderer;
+    if (renderer) {
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputEncoding = THREE.sRGBEncoding;
     }
 
-    document.getElementById('toggle-colliders').addEventListener('click', () => setVisible(!visible));
-    window.addEventListener('keydown', (e) => { if (e.key === 'd' || e.key === 'D') setVisible(!visible); });
+    // 5) boost shadowmap para las luces (ajusta si hace falta)
+    boostShadowQuality('greenLamp');
+    boostShadowQuality('greenSpot');
 
-    window._aframeColliders = { created, toggle: () => setVisible(!visible) };
+    // 6) debug: crea esfera amarilla pequeña en la posición de la luz para que veas dónde quedó
+    const debugSphere = document.createElement('a-sphere');
+    debugSphere.setAttribute('position', `${DESIRED_LIGHT_POS.x} ${DESIRED_LIGHT_POS.y} ${DESIRED_LIGHT_POS.z}`);
+    debugSphere.setAttribute('radius', '0.06');
+    debugSphere.setAttribute('color', '#ffff66');
+    debugSphere.setAttribute('opacity','0.9');
+    debugSphere.setAttribute('id','lamp-debug-sphere');
+    sceneEl.appendChild(debugSphere);
+    // quitar tras 6s
+    setTimeout(()=>{ const d=document.getElementById('lamp-debug-sphere'); if(d && d.parentNode) d.parentNode.removeChild(d); }, 6000);
 
-  })();
-  </script>
+    console.log('Posicionamiento de luz aplicado en', DESIRED_LIGHT_POS);
+  });
+
+})();
+</script>
 
   <!-- opcional: ajustar shadow map size para luces para mejorar calidad (puede afectar rendimiento) -->
   <script>
