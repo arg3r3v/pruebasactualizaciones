@@ -7,7 +7,7 @@
 
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <!-- aframe-extras (movement-controls con nipple) -->
+  <!-- aframe-extras (movement-controls con nipple/joystick) -->
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
   <!-- physics (cannon + aframe-physics-system) -->
   <script src="https://cdn.jsdelivr.net/gh/schteppe/cannon.js@0.6.2/build/cannon.min.js"></script>
@@ -20,9 +20,14 @@
 
   <style>
     body { margin: 0; font-family: sans-serif; }
-    header { z-index: 10000; position: relative; }
+    header { z-index: 10000; position: relative; padding: 12px 18px; background:#fff; display:flex; align-items:center; gap:12px; }
+    header h1 { margin:0; font-size:18px; color:#111; }
+    nav ul { margin:0; padding:0; list-style:none; display:flex; gap:10px; }
     a-scene[embedded] { width: 100%; height: 72vh; display: block; }
     #poema { padding: 20px; max-width: 900px; margin: 18px auto; }
+    #ui-debug { position: fixed; right: 18px; top: 18px; z-index:9999; }
+    #toggle-colliders { background:#111; color:#fff; border: none; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    .debug-collider { opacity: 0.22 !important; }
   </style>
 </head>
 <body>
@@ -38,41 +43,46 @@
     </nav>
   </header>
 
+  <div id="ui-debug">
+    <button id="toggle-colliders">Mostrar colliders (D)</button>
+  </div>
+
   <!-- ESCENA: cuarto con luz interior verde -->
   <a-scene embedded
            physics="gravity: 0 -9.8 0"
            shadow="type: pcfsoft"
-           renderer="antialias: true; physicallyCorrectLights: true">
+           renderer="antialias: true; physicallyCorrectLights: true; colorManagement: true">
 
-    <!-- Assets: techo, paredes, objetos separados -->
+    <!-- Assets: 6 secciones -->
     <a-assets>
-      <a-asset-item id="techoModel" src="models/cuarto1.glb"></a-asset-item>
-      <a-asset-item id="paredesModel" src="models/cuarto2.glb"></a-asset-item>
-      <a-asset-item id="objetosModel" src="models/cuarto3.glb"></a-asset-item>
-      <a-asset-item id="techoModel1" src="models/cuarto4.glb"></a-asset-item>
-      <a-asset-item id="paredesModel1" src="models/cuarto5.glb"></a-asset-item>
-      <a-asset-item id="objetosModel1" src="models/cuarto6.glb"></a-asset-item>
-      <!-- opcional: el model del personaje o decoración animada -->
+      <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
+      <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
+      <a-asset-item id="cuarto3" src="models/cuarto3.glb"></a-asset-item>
+      <a-asset-item id="cuarto4" src="models/cuarto4.glb"></a-asset-item>
+      <a-asset-item id="cuarto5" src="models/cuarto5.glb"></a-asset-item>
+      <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
+      <!-- personaje opcional -->
       <a-asset-item id="personajeModel" src="models/personaje.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Ambiente muy tenue (para que la luz verde sea dominante) -->
-    <a-entity light="type: ambient; intensity: 0.08; color: #111111"></a-entity>
+    <!-- Ambiente muy tenue -->
+    <a-entity light="type: ambient; intensity: 0.06; color: #080808"></a-entity>
 
-    <!-- LUZ INTERIOR VERDE (point light) -->
-    <!-- Ajusta position, intensity, distance y decay según tu cuarto -->
+    <!-- LUZ INTERIOR VERDE (point + spot) -->
+    <!-- Posición cambiada a x:-6 y:2 z:4 y ~10x intensidad -->
     <a-entity id="greenLamp"
-              light="type: point; color: #2bff7a; intensity: 1.6; distance: 8; decay: 2; castShadow: true"
-              position="0 2.8 0">
-      <!-- opcional: un pequeño globo visible que represente la lámpara en modo debug -->
-      <!-- <a-sphere radius="0.08" color="#2bff7a" position="0 0 0"></a-sphere> -->
-    </a-entity>
+              light="type: point; color: #2bff7a; intensity: 18; distance: 12; decay: 2"
+              position="-6 2 4"></a-entity>
+
+    <a-entity id="greenSpot"
+              light="type: spot; color: #2bff7a; intensity: 9; distance: 12; angle: 0.8; penumbra: 0.6; decay: 2"
+              position="-6 2 4" rotation="-90 0 0"></a-entity>
 
     <!-- RIG para movimiento (joystick on mobile + WASD desktop) -->
     <a-entity id="rig"
               position="0 1.6 4"
-              movement-controls="controls: gamepad, trackpad, keyboard, nipple"
-              kinematic-body>
+              kinematic-body
+              movement-controls="controls: gamepad, trackpad, keyboard, nipple">
       <a-entity id="cam"
                 camera
                 look-controls="touchEnabled: true; magicWindowTrackingEnabled: true; pointerLockEnabled: true">
@@ -80,24 +90,16 @@
       </a-entity>
     </a-entity>
 
-    <!-- MODELOS: techo arriba, paredes y objetos interiores -->
-    <!-- Pon shadow="cast: true; receive: true" para que proyecten/reciban sombras -->
-    <a-entity id="paredes" gltf-model="#paredesModel" position="0 0 0" scale="1 1 1" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="objetos" gltf-model="#objetosModel" position="0 0 0" scale="1 1 1" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="techo" gltf-model="#techoModel" position="0 0 0" scale="1 1 1" shadow="receive: true"></a-entity>
+    <!-- MODELOS: 6 secciones (visual only). Colliders se crean automáticamente desde JS -->
+    <a-entity id="sec1" gltf-model="#cuarto1" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="sec2" gltf-model="#cuarto2" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="sec3" gltf-model="#cuarto3" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="sec4" gltf-model="#cuarto4" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="sec5" gltf-model="#cuarto5" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="sec6" gltf-model="#cuarto6" position="0 0 0" shadow="cast: true; receive: true"></a-entity>
 
-    <!-- Personaje decorativo (si tienes animaciones) -->
+    <!-- Personaje decorativo (opcional) -->
     <a-entity id="personaje" gltf-model="#personajeModel" position="1 0 -2" scale="1 1 1" animation-mixer="clip: *; loop: repeat" shadow="cast: true"></a-entity>
-
-    <!-- Plano invisible de colisión (piso) -->
-    <a-plane id="colision-piso"
-             position="0 0 0"
-             rotation="-90 0 0"
-             width="100" height="100"
-             visible="false"
-             static-body
-             shadow="receive: true">
-    </a-plane>
 
   </a-scene>
 
@@ -114,14 +116,122 @@
     </p>
   </div>
 
+  <!-- Script: genera colliders invisibles (a-box static-body) a partir del bounding box de cada sección -->
   <script>
-    // Ajustes recomendados automáticos al cargar:
-    document.addEventListener('DOMContentLoaded', () => {
-      // Si quieres cambiar la posición inicial del rig:
-      // document.getElementById('rig').setAttribute('position','0 1.6 3');
+  (function () {
+    const sceneEl = document.querySelector('a-scene');
+    const sectionIds = ['sec1','sec2','sec3','sec4','sec5','sec6'];
+    const created = [];
+    let visible = false;
 
-      // Si tu techo tiene huecos y la luz se "escapa", sube un poco intensity o reduce distance:
-      // document.getElementById('greenLamp').setAttribute('light','intensity: 1.8; distance: 9;');
+    function quatToEulerDeg(q) {
+      const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
+      return { x: THREE.Math.radToDeg(e.x), y: THREE.Math.radToDeg(e.y), z: THREE.Math.radToDeg(e.z) };
+    }
+
+    function createCollider(center, size, quat, name) {
+      const box = document.createElement('a-box');
+      box.setAttribute('position', `${center.x.toFixed(3)} ${center.y.toFixed(3)} ${center.z.toFixed(3)}`);
+      box.setAttribute('width', Math.max(size.x, 0.01).toFixed(3));
+      box.setAttribute('height', Math.max(size.y, 0.01).toFixed(3));
+      box.setAttribute('depth', Math.max(size.z, 0.01).toFixed(3));
+      const e = quatToEulerDeg(quat);
+      box.setAttribute('rotation', `${e.x.toFixed(3)} ${e.y.toFixed(3)} ${e.z.toFixed(3)}`);
+      box.setAttribute('visible', 'false');
+      box.setAttribute('material', 'color: #00ff00; opacity: 0.25; side: double;');
+      box.setAttribute('static-body', '');
+      box.setAttribute('id', `collider-${name}`);
+      sceneEl.appendChild(box);
+      created.push(box);
+      return box;
+    }
+
+    function handleModelLoaded(entId) {
+      const ent = document.getElementById(entId);
+      if (!ent) return;
+      ent.addEventListener('model-loaded', (evt) => {
+        try {
+          const model = evt.detail.model;
+          const bbox = new THREE.Box3().setFromObject(model);
+          const size = new THREE.Vector3(); bbox.getSize(size);
+          const center = new THREE.Vector3(); bbox.getCenter(center);
+          const quat = new THREE.Quaternion(); model.getWorldQuaternion(quat);
+          size.multiplyScalar(0.98);
+          createCollider(center, size, quat, entId);
+        } catch (err) {
+          console.warn('Error generando collider para', entId, err);
+        }
+      });
+    }
+
+    sectionIds.forEach(id => handleModelLoaded(id));
+    window.addEventListener('load', () => {
+      sectionIds.forEach(id => {
+        const ent = document.getElementById(id);
+        if (!ent) return;
+        const obj = ent.getObject3D('mesh') || ent.getObject3D('gltf') || ent.getObject3D('object3D');
+        if (obj) ent.emit('model-loaded', { model: obj }, false);
+      });
+    });
+
+    function setVisible(v) {
+      visible = !!v;
+      created.forEach(c => {
+        c.setAttribute('visible', visible ? 'true' : 'false');
+        if (visible) c.classList.add('debug-collider'); else c.classList.remove('debug-collider');
+      });
+      document.getElementById('toggle-colliders').textContent = visible ? 'Ocultar colliders (D)' : 'Mostrar colliders (D)';
+    }
+
+    document.getElementById('toggle-colliders').addEventListener('click', () => setVisible(!visible));
+    window.addEventListener('keydown', (e) => { if (e.key === 'd' || e.key === 'D') setVisible(!visible); });
+
+    window._aframeColliders = { created, toggle: () => setVisible(!visible) };
+
+  })();
+  </script>
+
+  <!-- opcional: ajustar shadow map size para luces para mejorar calidad (puede afectar rendimiento) -->
+  <script>
+    document.addEventListener('render-target-loaded', () => {
+      try {
+        const sceneEl = document.querySelector('a-scene');
+        const renderer = sceneEl.renderer;
+        if (!renderer) return;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // aumenta resolución de shadow maps para las luces indicadas
+        const setShadowQuality = (id) => {
+          const lightEl = document.getElementById(id);
+          if (!lightEl) return;
+          const lightObj = lightEl.getObject3D('light');
+          if (!lightObj) return;
+          lightObj.castShadow = true;
+          if (lightObj.shadow && lightObj.shadow.mapSize) {
+            lightObj.shadow.mapSize.width = 2048;
+            lightObj.shadow.mapSize.height = 2048;
+            lightObj.shadow.bias = -0.0005;
+            if (lightObj.shadow.camera) {
+              lightObj.shadow.camera.near = 0.1;
+              lightObj.shadow.camera.far = 30;
+              if (lightObj.shadow.camera.left !== undefined) {
+                const s = 6;
+                lightObj.shadow.camera.left = -s;
+                lightObj.shadow.camera.right = s;
+                lightObj.shadow.camera.top = s;
+                lightObj.shadow.camera.bottom = -s;
+              }
+              lightObj.shadow.camera.updateProjectionMatrix();
+            }
+          }
+        };
+
+        setShadowQuality('greenLamp');
+        setShadowQuality('greenSpot');
+      } catch (err) {
+        console.warn('No se pudo ajustar shadow maps:', err);
+      }
     });
   </script>
 
