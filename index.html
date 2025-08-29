@@ -3,99 +3,95 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Galería — Cuartos (shadows + 1 luz interior)</title>
+  <title>Galería — Cuartos (1 luz interior + sombras)</title>
 
-  <!-- A-Frame -->
+  <!-- A-Frame y extras (mismos que usabas) -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <script src="https://unpkg.com/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
+  <script src="https://unpkg.com/aframe-environment-component/dist/aframe-environment-component.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
-  <style>
-    body { margin: 0; }
-  </style>
+  <style> body { margin: 0; height: 100vh; } </style>
 </head>
 <body>
-  <!-- ESCENA -->
   <a-scene id="scene"
            renderer="antialias: true; physicallyCorrectLights: true"
            shadow="type: pcfsoft; autoUpdate: true"
            background="color: #bfcdd8">
 
-    <!-- ASSETS: solo los 6 archivos glb que pediste -->
+    <!-- Assets: SOLO tus 6 glb -->
     <a-assets>
-      <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
-      <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
-      <a-asset-item id="cuarto3" src="models/cuarto3.glb"></a-asset-item>
-      <a-asset-item id="cuarto4" src="models/cuarto4.glb"></a-asset-item>
-      <a-asset-item id="cuarto5" src="models/cuarto5.glb"></a-asset-item>
-      <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
+      <a-asset-item id="cuarto1" src="assets/cuarto1.glb"></a-asset-item>
+      <a-asset-item id="cuarto2" src="assets/cuarto2.glb"></a-asset-item>
+      <a-asset-item id="cuarto3" src="assets/cuarto3.glb"></a-asset-item>
+      <a-asset-item id="cuarto4" src="assets/cuarto4.glb"></a-asset-item>
+      <a-asset-item id="cuarto5" src="assets/cuarto5.glb"></a-asset-item>
+      <a-asset-item id="cuarto6" src="assets/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Nota: Uso #cuarto1 como navmesh por defecto. Si tienes un glb de navmesh distinto, cámbialo. -->
-    <!-- LUZ ÚNICA (dentro del cuarto): SpotLight para sombras fuertes y realistas interiores -->
+    <!-- NAVMESH: cuarto1 es la navmesh (oculta) -->
+    <a-entity id="navmesh" nav-mesh gltf-model="#cuarto1" visible="false" shadow="receive: true"></a-entity>
+
+    <!-- ÚNICA LUZ: Spotlight dentro del cuarto. Ajusta position si quieres la misma que en Blender -->
+    <!-- uso spot para sombras direccionadas y controlables -->
     <a-entity id="lamp"
-              position="0 3 0"
-              rotation="0 0 0"
+              position="0 2.6 0"
               light="type: spot;
                      color: #fff;
-                     intensity: 1.2;
-                     distance: 30;
+                     intensity: 1.25;
+                     distance: 35;
                      angle: 0.9;
                      penumbra: 0.8;
                      decay: 2;
                      castShadow: true"
-              shadow="mapSizeWidth: 2048; mapSizeHeight: 2048; bias: -0.0006; radius: 1.5">
-      <!-- Un pequeño "objeto visual" opcional para ubicar la lámpara (puedes quitarlo) -->
-      <a-sphere radius="0.08" position="0 0 0" visible="false"></a-sphere>
+              shadow="mapSizeWidth: 2048; mapSizeHeight: 2048; bias: -0.0005; cameraNear: 0.5; cameraFar: 60">
+      <!-- opcional: pequeña esfera para referencia (invisible) -->
+      <a-sphere radius="0.06" visible="false"></a-sphere>
     </a-entity>
 
-    <!-- RIG y cámara — manteniendo la lógica de movimiento y colisiones -->
-    <a-entity id="rig" position="0 0 2"
-              movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
-      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
+    <!-- RIG y cámara — misma lógica de movimiento y colisiones que usas -->
+    <a-entity id="rig" movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;" position="0 0 2">
+      <a-entity camera position="0 4 0" look-controls="pointerLockEnabled: true">
         <a-cursor></a-cursor>
       </a-entity>
     </a-entity>
 
-    <!-- Navmesh: aquí uso el glb cuarto1 como referencia (ajusta si es necesario) -->
-    <a-entity id="navmesh" visible="false" gltf-model="#cuarto1"></a-entity>
+    <!-- Inserta los GLB tal cual (no cambio posiciones ni escalas). Si tus GLB contienen sus propias transformaciones, A-Frame respetará esas local transforms. -->
+    <!-- Cuarto1 ya fue usado como navmesh; lo colocamos también visible si quieres mostrar la geometría real del cuarto. -->
+    <a-entity id="cuarto1_vis" gltf-model="#cuarto1" position="0 0 0" rotation="0 0 0" scale="1 1 1"></a-entity>
 
-    <!-- Inserta los 6 gltf como entidades en la escena (posiciones de ejemplo; ajusta a tu layout) -->
-    <!-- Asumo que cuarto1 es el recinto principal (con paredes/techo/piso). -->
-    <a-entity id="room" gltf-model="#cuarto1" position="0 0 0" rotation="0 0 0" scale="1 1 1"></a-entity>
+    <!-- Los demás assets exportados desde Blender mantendrán sus posiciones relativas internas -->
+    <a-entity id="cuarto2_vis" gltf-model="#cuarto2"></a-entity>
+    <a-entity id="cuarto3_vis" gltf-model="#cuarto3"></a-entity>
+    <a-entity id="cuarto4_vis" gltf-model="#cuarto4"></a-entity>
+    <a-entity id="cuarto5_vis" gltf-model="#cuarto5"></a-entity>
+    <a-entity id="cuarto6_vis" gltf-model="#cuarto6"></a-entity>
 
-    <!-- Los otros cuartos/assets (puedes posicionarlos dentro del espacio según necesites) -->
-    <a-entity id="asset2" gltf-model="#cuarto2" position="2 0 -2" rotation="0 0 0" scale="1 1 1"></a-entity>
-    <a-entity id="asset3" gltf-model="#cuarto3" position="-2 0 -2" rotation="0 0 0" scale="1 1 1"></a-entity>
-    <a-entity id="asset4" gltf-model="#cuarto4" position="2 0 2" rotation="0 0 0" scale="1 1 1"></a-entity>
-    <a-entity id="asset5" gltf-model="#cuarto5" position="-2 0 2" rotation="0 0 0" scale="1 1 1"></a-entity>
-    <a-entity id="asset6" gltf-model="#cuarto6" position="0 0 4" rotation="0 0 0" scale="1 1 1"></a-entity>
-
-    <!-- SCRIPT: activa shadowMap y habilita cast/receive automáticamente en modelos -->
+    <!-- Sistema / script para habilitar shadowMap y aplicar cast/receive en todas las mallas al cargar -->
     <script>
-      AFRAME.registerSystem('shadows-setup', {
+      AFRAME.registerSystem('enable-shadows', {
         init: function () {
           const sceneEl = this.el;
-          // Aseguramos el renderer y shadowMap
+
+          // Activar shadowMap en renderer cuando esté listo
           sceneEl.addEventListener('render-target-loaded', () => {
             try {
               if (sceneEl.renderer) {
                 sceneEl.renderer.shadowMap.enabled = true;
                 sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-                // physLights ya está en renderer attribute; reforzamos
-                if (sceneEl.renderer.physicallyCorrectLights !== true) {
-                  sceneEl.renderer.physicallyCorrectLights = true;
-                }
+                sceneEl.renderer.physicallyCorrectLights = true;
               }
-            } catch (e) { console.warn('No se pudo configurar renderer.shadowMap:', e); }
+            } catch (err) {
+              console.warn('No se pudo configurar renderer.shadowMap:', err);
+            }
           });
 
-          // Función que activa cast/receive en un elemento cuando su modelo carga
-          function enableShadowsForEntity(el) {
-            // marcar atributo shadow para que A-Frame lo sepa también
-            el.setAttribute && el.setAttribute('shadow', 'cast: true; receive: true');
+          // Función que habilita cast/receive en un entity con modelo
+          function enableShadowsOnEntity(el) {
+            // Marca atributo shadow (útil para primitivas)
+            if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
 
-            el.addEventListener('model-loaded', function (evt) {
-              // algunos modelos exponen 'mesh' o 'model'
+            // Cuando el modelo esté cargado
+            el.addEventListener('model-loaded', function () {
               const obj = el.getObject3D('mesh') || el.getObject3D('model');
               if (!obj) return;
               obj.traverse(function (node) {
@@ -107,10 +103,10 @@
               });
             });
 
-            // Si ya está cargado
-            const maybeObj = el.getObject3D('mesh') || el.getObject3D('model');
-            if (maybeObj) {
-              maybeObj.traverse(function (node) {
+            // Si ya está disponible (cached)
+            const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+            if (maybe) {
+              maybe.traverse(function (node) {
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
@@ -119,18 +115,16 @@
             }
           }
 
-          // Aplicar a todos los gltf-model presentes
-          const nodes = sceneEl.querySelectorAll('[gltf-model]');
-          nodes.forEach(enableShadowsForEntity);
+          // Aplicar a los gltf-model actuales
+          const gltfs = sceneEl.querySelectorAll('[gltf-model]');
+          gltfs.forEach(enableShadowsOnEntity);
 
-          // Observar nuevos nodos añadidos dinámicamente
-          const mo = new MutationObserver((mutations) => {
+          // Observar la escena por si se agregan entidades dinámicamente
+          const mo = new MutationObserver(mutations => {
             mutations.forEach(m => {
               m.addedNodes.forEach(node => {
                 if (!(node instanceof Element)) return;
-                if (node.hasAttribute && node.hasAttribute('gltf-model')) {
-                  enableShadowsForEntity(node);
-                }
+                if (node.hasAttribute && node.hasAttribute('gltf-model')) enableShadowsOnEntity(node);
               });
             });
           });
