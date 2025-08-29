@@ -3,48 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Galería — Cuartos (cuarto1..cuarto6)</title>
+  <title>Galería — Cuartos (shadows + 1 luz interior)</title>
 
   <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <!-- aframe-extras (movement-controls con nipple/joystick) -->
-  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
-  <!-- physics (cannon + aframe-physics-system) -->
-  <script src="https://cdn.jsdelivr.net/gh/schteppe/cannon.js@0.6.2/build/cannon.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-physics-system@4.0.1/dist/aframe-physics-system.min.js"></script>
-  <!-- animation-mixer por si lo necesitas luego -->
-  <script src="https://cdn.jsdelivr.net/npm/aframe-animation-mixer@6.0.0/dist/aframe-animation-mixer.min.js"></script>
+  <script src="https://unpkg.com/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
   <style>
-    body { margin:0; font-family: system-ui, Arial; background:#111; color:#eee;}
-    header { padding:14px 18px; background:#fff; color:#111; display:flex; gap:12px; align-items:center; }
-    #ui-debug { position: fixed; right: 18px; top: 18px; z-index: 9999; }
-    #toggle-colliders { background:#111; color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
-    /* colliders invisibles por defecto */
-    .debug-collider { opacity: 0 !important; pointer-events: none; }
-    /* para visual debug (si activas) */
-    .debug-visible { opacity: 0.22 !important; }
-    a-scene[embedded] { width: 100%; height: 86vh; display:block; }
-    footer { padding:12px 18px; text-align:center; font-size:13px; color:#999; }
+    body { margin: 0; }
   </style>
 </head>
 <body>
-  <header>
-    <strong>Galería — usando: cuarto1..cuarto6</strong>
-  </header>
-
-  <div id="ui-debug">
-    <button id="toggle-colliders">Mostrar colliders (D)</button>
-  </div>
-
   <!-- ESCENA -->
-  <a-scene embedded
-           physics="gravity: 0 -9.8 0; defaultContactMaterial: {friction: 0.6; restitution: 0.0}"
-           renderer="antialias: true; physicallyCorrectLights: true; colorManagement: true"
-           shadow="type: pcfsoft">
+  <a-scene id="scene"
+           renderer="antialias: true; physicallyCorrectLights: true"
+           shadow="type: pcfsoft; autoUpdate: true"
+           background="color: #bfcdd8">
 
-    <!-- Assets: solo tus 6 glb -->
-    <a-assets timeout="600000">
+    <!-- ASSETS: solo los 6 archivos glb que pediste -->
+    <a-assets>
       <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
       <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
       <a-asset-item id="cuarto3" src="models/cuarto3.glb"></a-asset-item>
@@ -53,233 +30,115 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Iluminación (valores por defecto — muévelas en el HTML si prefieres) -->
-    <!-- Luz hemisférica suave para base ambiental -->
-    <a-entity id="hemisphereLight" light="type: hemisphere; groundColor: #333333; skyColor: #b8dcff; intensity: 0.35"></a-entity>
+    <!-- Nota: Uso #cuarto1 como navmesh por defecto. Si tienes un glb de navmesh distinto, cámbialo. -->
+    <!-- LUZ ÚNICA (dentro del cuarto): SpotLight para sombras fuertes y realistas interiores -->
+    <a-entity id="lamp"
+              position="0 3 0"
+              rotation="0 0 0"
+              light="type: spot;
+                     color: #fff;
+                     intensity: 1.2;
+                     distance: 30;
+                     angle: 0.9;
+                     penumbra: 0.8;
+                     decay: 2;
+                     castShadow: true"
+              shadow="mapSizeWidth: 2048; mapSizeHeight: 2048; bias: -0.0006; radius: 1.5">
+      <!-- Un pequeño "objeto visual" opcional para ubicar la lámpara (puedes quitarlo) -->
+      <a-sphere radius="0.08" position="0 0 0" visible="false"></a-sphere>
+    </a-entity>
 
-    <!-- Luz direccional (como 'sol' exterior) para generar sombras generales -->
-    <a-entity id="sun" light="type: directional; color: #fff; intensity: 1.0; castShadow: true; shadowCameraLeft: -10; shadowCameraRight: 10; shadowCameraTop: 10; shadowCameraBottom: -10; shadowMapWidth: 2048; shadowMapHeight: 2048; shadowBias: 0.0006"
-              position="-10 18 10"
-              rotation="-45 35 0"></a-entity>
-
-    <!-- Un par de luces puntuales para simular luminarias interiores; ajusta niveles/posiciones en HTML -->
-    <a-entity id="lamp1" light="type: point; color: #ffdcb2; intensity: 150; distance: 8; decay: 2; castShadow: true" position="0 2 -2"></a-entity>
-    <a-entity id="lamp2" light="type: point; color: #cfefff; intensity: 120; distance: 6; decay: 2; castShadow: true" position="2 2 2"></a-entity>
-
-    <!-- RIG (mantengo movement-controls / kinematic-body) -->
-    <a-entity id="rig" position="0 1.6 0" kinematic-body
-              movement-controls="controls: gamepad, trackpad, keyboard, nipple; enableFlying: false;">
-      <a-entity id="cam" camera look-controls="pointerLockEnabled: true" position="0 0 0">
-        <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
+    <!-- RIG y cámara — manteniendo la lógica de movimiento y colisiones -->
+    <a-entity id="rig" position="0 0 2"
+              movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
+      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
+        <a-cursor></a-cursor>
       </a-entity>
     </a-entity>
 
-    <!-- Secciones: colócalas donde quieras. Aquí las dejo en origen; puedes mover o rotarlas -->
-    <a-entity id="sec1" gltf-model="#cuarto1" position="0 0 0" rotation="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec2" gltf-model="#cuarto2" position="8 0 0" rotation="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec3" gltf-model="#cuarto3" position="-8 0 0" rotation="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec4" gltf-model="#cuarto4" position="0 0 8" rotation="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec5" gltf-model="#cuarto5" position="0 0 -8" rotation="0 0 0" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="sec6" gltf-model="#cuarto6" position="16 0 0" rotation="0 0 0" shadow="cast: true; receive: true"></a-entity>
+    <!-- Navmesh: aquí uso el glb cuarto1 como referencia (ajusta si es necesario) -->
+    <a-entity id="navmesh" visible="false" gltf-model="#cuarto1"></a-entity>
 
-  </a-scene>
+    <!-- Inserta los 6 gltf como entidades en la escena (posiciones de ejemplo; ajusta a tu layout) -->
+    <!-- Asumo que cuarto1 es el recinto principal (con paredes/techo/piso). -->
+    <a-entity id="room" gltf-model="#cuarto1" position="0 0 0" rotation="0 0 0" scale="1 1 1"></a-entity>
 
-  <footer>
-    Usando solo: cuarto1..cuarto6 — colisiones para cuarto1 y luces configurables.
-  </footer>
+    <!-- Los otros cuartos/assets (puedes posicionarlos dentro del espacio según necesites) -->
+    <a-entity id="asset2" gltf-model="#cuarto2" position="2 0 -2" rotation="0 0 0" scale="1 1 1"></a-entity>
+    <a-entity id="asset3" gltf-model="#cuarto3" position="-2 0 -2" rotation="0 0 0" scale="1 1 1"></a-entity>
+    <a-entity id="asset4" gltf-model="#cuarto4" position="2 0 2" rotation="0 0 0" scale="1 1 1"></a-entity>
+    <a-entity id="asset5" gltf-model="#cuarto5" position="-2 0 2" rotation="0 0 0" scale="1 1 1"></a-entity>
+    <a-entity id="asset6" gltf-model="#cuarto6" position="0 0 4" rotation="0 0 0" scale="1 1 1"></a-entity>
 
-  <!-- SCRIPT: conversión de materiales, centrar rig, generar colliders de cuarto1, togglear colliders -->
-  <script>
-  (function(){
-    const COLLIDER_CLASS = 'auto-collider';
-    const DEBUG_CLASS = 'debug-collider'; // clase usada para togglear visibilidad
-    const WALL_THICKNESS = 0.08; // grosor de paredes físicas
-
-    // Espera escena cargada
-    function whenSceneReady(cb) {
-      const scene = document.querySelector('a-scene');
-      if (!scene) { console.warn('No a-scene'); return; }
-      if (scene.hasLoaded) return cb(scene);
-      scene.addEventListener('loaded', () => cb(scene), { once: true });
-    }
-
-    whenSceneReady(sceneEl => {
-      const THREE = window.THREE;
-      const sec1 = document.getElementById('sec1');
-      const rig = document.getElementById('rig');
-      const toggleBtn = document.getElementById('toggle-colliders');
-
-      // Forzar ajustes del renderer (sombras / color)
-      if (sceneEl.renderer) {
-        sceneEl.renderer.shadowMap.enabled = true;
-        sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
-      } else {
-        // some timing: attempt later
-        sceneEl.addEventListener('render-target-loaded', ()=> {
-          if (sceneEl.renderer) {
-            sceneEl.renderer.shadowMap.enabled = true;
-            sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
-          }
-        }, { once:true });
-      }
-
-      // Convierte materiales no-PBR -> MeshStandardMaterial (conserva mapas principales)
-      function promoteMaterials(root) {
-        root.traverse(node => {
-          if (!node.isMesh) return;
-          const mat = node.material;
-          if (!mat) return;
-          // if already standard, skip
-          if (mat.isMeshStandardMaterial) { mat.needsUpdate = true; return; }
-
-          // build params copying common maps
-          const params = {};
-          ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap'].forEach(k=>{
-            if (mat[k]) params[k] = mat[k];
+    <!-- SCRIPT: activa shadowMap y habilita cast/receive automáticamente en modelos -->
+    <script>
+      AFRAME.registerSystem('shadows-setup', {
+        init: function () {
+          const sceneEl = this.el;
+          // Aseguramos el renderer y shadowMap
+          sceneEl.addEventListener('render-target-loaded', () => {
+            try {
+              if (sceneEl.renderer) {
+                sceneEl.renderer.shadowMap.enabled = true;
+                sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                // physLights ya está en renderer attribute; reforzamos
+                if (sceneEl.renderer.physicallyCorrectLights !== true) {
+                  sceneEl.renderer.physicallyCorrectLights = true;
+                }
+              }
+            } catch (e) { console.warn('No se pudo configurar renderer.shadowMap:', e); }
           });
-          if (mat.color) params.color = mat.color.clone ? mat.color.clone() : mat.color;
-          if (typeof mat.roughness !== 'undefined') params.roughness = mat.roughness;
-          else params.roughness = 1.0;
-          if (typeof mat.metalness !== 'undefined') params.metalness = mat.metalness || 0.0;
 
-          const newMat = new THREE.MeshStandardMaterial(params);
-          newMat.side = THREE.DoubleSide; // previene faces invisibles cuando normales mal orientadas
-          newMat.needsUpdate = true;
-          node.material = newMat;
-        });
-      }
+          // Función que activa cast/receive en un elemento cuando su modelo carga
+          function enableShadowsForEntity(el) {
+            // marcar atributo shadow para que A-Frame lo sepa también
+            el.setAttribute && el.setAttribute('shadow', 'cast: true; receive: true');
 
-      // Compute bbox for an entity after its model loaded
-      function computeBBoxForEntity(entity) {
-        const obj = entity.getObject3D('mesh') || entity.getObject3D('gltf') || entity.object3D;
-        if (!obj) return null;
-        const box = new THREE.Box3().setFromObject(obj);
-        if (box.isEmpty()) return null;
-        const size = new THREE.Vector3(); box.getSize(size);
-        const center = new THREE.Vector3(); box.getCenter(center);
-        const min = box.min.clone(); const max = box.max.clone();
-        return { box, size, center, min, max };
-      }
+            el.addEventListener('model-loaded', function (evt) {
+              // algunos modelos exponen 'mesh' o 'model'
+              const obj = el.getObject3D('mesh') || el.getObject3D('model');
+              if (!obj) return;
+              obj.traverse(function (node) {
+                if (node.isMesh) {
+                  node.castShadow = true;
+                  node.receiveShadow = true;
+                  if (node.material) node.material.needsUpdate = true;
+                }
+              });
+            });
 
-      // Create 6 thin box colliders from bbox (floor, ceiling, 4 walls)
-      function createRoomColliders(scene, bbox) {
-        // clear previous
-        scene.querySelectorAll('.' + COLLIDER_CLASS).forEach(n => n.remove());
-
-        const { size, center, min, max } = bbox;
-
-        function addBox(pos, dim) {
-          const el = document.createElement('a-box');
-          el.classList.add(COLLIDER_CLASS);
-          el.classList.add(DEBUG_CLASS);
-          el.setAttribute('position', pos.join(' '));
-          el.setAttribute('width', dim[0]);
-          el.setAttribute('height', dim[1]);
-          el.setAttribute('depth', dim[2]);
-          el.setAttribute('static-body', 'shape: box;');
-          // invisible by default (avoid visible lines). Toggle will set visible true.
-          el.setAttribute('visible', 'false');
-          scene.appendChild(el);
-        }
-
-        // floor
-        addBox([center.x, min.y + WALL_THICKNESS/2, center.z], [size.x, WALL_THICKNESS, size.z]);
-        // ceiling
-        addBox([center.x, max.y - WALL_THICKNESS/2, center.z], [size.x, WALL_THICKNESS, size.z]);
-        // wall +X
-        addBox([max.x - WALL_THICKNESS/2, center.y, center.z], [WALL_THICKNESS, size.y, size.z]);
-        // wall -X
-        addBox([min.x + WALL_THICKNESS/2, center.y, center.z], [WALL_THICKNESS, size.y, size.z]);
-        // wall +Z
-        addBox([center.x, center.y, max.z - WALL_THICKNESS/2], [size.x, size.y, WALL_THICKNESS]);
-        // wall -Z
-        addBox([center.x, center.y, min.z + WALL_THICKNESS/2], [size.x, size.y, WALL_THICKNESS]);
-      }
-
-      // Center the rig at center of sec1 bounding box (preserving rig height offset if needed)
-      function centerRigAtBBox(bbox) {
-        if (!rig) return;
-        const center = bbox.center;
-        // Put rig at center.x, center.y - but we want camera eye height at center.y? 
-        // If cuarto1 is a room with floor at y=0, center.y is room vertical center.
-        // Place rig so camera eye is at center.y (user requested center of room).
-        // rig holds camera at 0, so set rig.y = center.y
-        rig.setAttribute('position', `${center.x} ${center.y} ${center.z}`);
-        console.log('Rig moved to center of cuarto1:', center);
-      }
-
-      // Toggle UI
-      function setupToggle() {
-        if (!toggleBtn) return;
-        let shown = false;
-        const update = () => {
-          document.querySelectorAll('.' + COLLIDER_CLASS).forEach(n => {
-            n.setAttribute('visible', shown ? 'true' : 'false');
-            if (shown) n.classList.add('debug-visible'); else n.classList.remove('debug-visible');
-          });
-          toggleBtn.textContent = shown ? 'Ocultar colliders (D)' : 'Mostrar colliders (D)';
-        };
-        toggleBtn.addEventListener('click', ()=> { shown = !shown; update(); });
-        window.addEventListener('keydown', (ev)=> { if (ev.key.toLowerCase() === 'd') { shown = !shown; update(); }});
-        update();
-      }
-
-      // After sec1 loads -> promote materials, compute bbox, create colliders and center rig
-      function onSec1Ready() {
-        const bbox = computeBBoxForEntity(sec1);
-        if (!bbox) {
-          console.warn('No se pudo obtener bbox de sec1');
-          return;
-        }
-        // promote materials in sec1 and in entire scene to be safe
-        const obj = sec1.getObject3D('mesh') || sec1.object3D;
-        if (obj) promoteMaterials(obj);
-        promoteMaterials(sceneEl.object3D);
-
-        createRoomColliders(sceneEl, bbox);
-        centerRigAtBBox(bbox);
-        setupToggle();
-      }
-
-      // Hook model-loaded if needed
-      if (sec1.getObject3D('mesh') || sec1.getObject3D('gltf')) {
-        // already loaded
-        setTimeout(onSec1Ready, 80);
-      } else {
-        sec1.addEventListener('model-loaded', () => {
-          // slight delay to allow textures to settle
-          setTimeout(onSec1Ready, 80);
-        }, { once: true });
-      }
-
-      // Extra: improve shadow settings of point/spot lights once they exist
-      setTimeout(() => {
-        const sunEl = document.getElementById('sun');
-        const lamp1 = document.getElementById('lamp1');
-        const lamp2 = document.getElementById('lamp2');
-        [sunEl, lamp1, lamp2].forEach(le => {
-          if (!le) return;
-          const lightObj = le.getObject3D && le.getObject3D('light');
-          if (!lightObj) return;
-          lightObj.castShadow = true;
-          if (lightObj.shadow) {
-            // reasonable defaults
-            lightObj.shadow.mapSize.width = 2048;
-            lightObj.shadow.mapSize.height = 2048;
-            lightObj.shadow.bias = 0.0005;
-            if (lightObj.shadow.camera && lightObj.shadow.camera.updateProjectionMatrix) {
-              lightObj.shadow.camera.near = 0.1;
-              lightObj.shadow.camera.far = 100;
-              lightObj.shadow.camera.updateProjectionMatrix();
+            // Si ya está cargado
+            const maybeObj = el.getObject3D('mesh') || el.getObject3D('model');
+            if (maybeObj) {
+              maybeObj.traverse(function (node) {
+                if (node.isMesh) {
+                  node.castShadow = true;
+                  node.receiveShadow = true;
+                }
+              });
             }
           }
-        });
-      }, 500);
 
-    }); // end whenSceneReady
-  })();
-  </script>
+          // Aplicar a todos los gltf-model presentes
+          const nodes = sceneEl.querySelectorAll('[gltf-model]');
+          nodes.forEach(enableShadowsForEntity);
+
+          // Observar nuevos nodos añadidos dinámicamente
+          const mo = new MutationObserver((mutations) => {
+            mutations.forEach(m => {
+              m.addedNodes.forEach(node => {
+                if (!(node instanceof Element)) return;
+                if (node.hasAttribute && node.hasAttribute('gltf-model')) {
+                  enableShadowsForEntity(node);
+                }
+              });
+            });
+          });
+          mo.observe(sceneEl, { childList: true, subtree: true });
+        }
+      });
+    </script>
+
+  </a-scene>
 </body>
 </html>
