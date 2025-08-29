@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Galería — Cuartos (1 luz interior + sombras)</title>
 
-  <!-- A-Frame y extras (solo los necesarios) -->
+  <!-- A-Frame (sin environment component) -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
@@ -13,7 +13,7 @@
 </head>
 <body>
   <a-scene id="scene"
-           renderer="antialias: true; physicallyCorrectLights: false"
+           renderer="antialias: true; physicallyCorrectLights: true"
            shadow="type: pcfsoft; autoUpdate: true"
            background="color: #bfcdd8">
 
@@ -27,24 +27,22 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- NAVMESH: cuarto1 es la navmesh (oculta) -->
+    <!-- NAVMESH: cuarto1 es navmesh (oculta) -->
     <a-entity id="navmesh" nav-mesh gltf-model="#cuarto1" visible="false"></a-entity>
 
-    <!-- ÚNICA LUZ: Spotlight interior (ajusta position si quieres la misma ubicación que la lámpara en Blender) -->
+    <!-- ÚNICA LUZ: Point light (bombilla interior) más potente para iluminar todo el cuarto -->
     <a-entity id="lamp"
-              position="0 2.2 0"
-              light="type: spot;
+              position="0 2.4 0"
+              light="type: point;
                      color: #ffffff;
-                     intensity: 2.2;
-                     distance: 40;
-                     angle: 0.9;
-                     penumbra: 0.8;
+                     intensity: 6.0;
+                     distance: 30;
                      decay: 2;
                      castShadow: true"
-              shadow="mapSizeWidth: 2048; mapSizeHeight: 2048; bias: -0.0005; cameraNear: 0.5; cameraFar: 60">
+              shadow="mapSizeWidth: 2048; mapSizeHeight: 2048; bias: -0.0005; radius: 1.2">
     </a-entity>
 
-    <!-- RIG y cámara — misma lógica de movimiento -->
+    <!-- RIG y cámara — lógica de movimiento -->
     <a-entity id="rig" movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;" position="0 0 2">
       <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled: true">
         <a-cursor></a-cursor>
@@ -59,27 +57,56 @@
     <a-entity id="cuarto5_vis" gltf-model="#cuarto5"></a-entity>
     <a-entity id="cuarto6_vis" gltf-model="#cuarto6"></a-entity>
 
-    <!-- Script: habilita sombras, corrige materiales DoubleSide y asegura que el rig no salga del bounding box del navmesh -->
+    <!-- Script: corrige materiales PBR, activa sombras y evita que el rig salga del bounding box del navmesh -->
     <script>
-      AFRAME.registerSystem('fix-shadows-and-clamp', {
+      AFRAME.registerSystem('shadows-and-material-fix', {
         init: function () {
           const sceneEl = this.el;
-          // activar shadowMap cuando el renderer esté listo
+
+          // Configurar renderer cuando esté listo
           sceneEl.addEventListener('render-target-loaded', () => {
             try {
               if (sceneEl.renderer) {
                 sceneEl.renderer.shadowMap.enabled = true;
                 sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-                // codificación correcta de salida para colores (útil si las texturas se ven oscuras)
                 sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
+                sceneEl.renderer.physicallyCorrectLights = true;
               }
             } catch (e) { console.warn('renderer config failed:', e); }
           });
 
-          // activa sombras y doble cara en cada glTF cargado
-          function prepareModel(el) {
+          // Forzar valores en materiales glTF para que no dependan de HDRI
+          function fixMaterialForMesh(mesh) {
+            if (!mesh || !mesh.material) return;
+            const mat = mesh.material;
+            try {
+              // Si el material es un array (multi-material), manejar cada uno
+              if (Array.isArray(mat)) {
+                mat.forEach(m => {
+                  if (!m) return;
+                  m.side = THREE.DoubleSide;
+                  if ('metalness' in m) m.metalness = 0.0;
+                  if ('roughness' in m) m.roughness = 1.0;
+                  m.envMap = null;
+                  m.envMapIntensity = 0;
+                  if (m.map) m.map.encoding = THREE.sRGBEncoding;
+                  m.needsUpdate = true;
+                });
+              } else {
+                mat.side = THREE.DoubleSide;
+                if ('metalness' in mat) mat.metalness = 0.0;
+                if ('roughness' in mat) mat.roughness = 1.0;
+                mat.envMap = null;
+                mat.envMapIntensity = 0;
+                if (mat.map) mat.map.encoding = THREE.sRGBEncoding;
+                mat.needsUpdate = true;
+              }
+            } catch (err) { /* no bloquear si algún material tiene estructura distinta */ }
+          }
+
+          // Preparar cada entidad con gltf-model: activar sombras y fijar materiales
+          function prepareEntity(el) {
             if (!el) return;
-            // asegúrate de que A-Frame marque el atributo shadow también
             if (el.setAttribute) el.setAttribute('shadow', 'cast: true; receive: true');
 
             el.addEventListener('model-loaded', () => {
@@ -89,109 +116,78 @@
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
-                  // Si la pared aparece negra por culado de caras internas -> doble cara
-                  try {
-                    if (node.material) {
-                      node.material.side = THREE.DoubleSide;
-                      node.material.needsUpdate = true;
-                    }
-                  } catch (err) { /* ignorar si no tiene material modificable */ }
+                  fixMaterialForMesh(node);
                 }
               });
             });
 
-            // caso cached
+            // si ya estaba cached
             const maybe = el.getObject3D('mesh') || el.getObject3D('model');
             if (maybe) {
               maybe.traverse(node => {
                 if (node.isMesh) {
                   node.castShadow = true;
                   node.receiveShadow = true;
-                  try {
-                    if (node.material) {
-                      node.material.side = THREE.DoubleSide;
-                      node.material.needsUpdate = true;
-                    }
-                  } catch (err) {}
+                  fixMaterialForMesh(node);
                 }
               });
             }
           }
 
-          // aplicar a todos los gltf-model ya presentes
+          // Aplica a todos los gltf presentes
           const gltfs = sceneEl.querySelectorAll('[gltf-model]');
-          gltfs.forEach(prepareModel);
+          gltfs.forEach(prepareEntity);
 
-          // observar nuevos nodos añadidos
+          // Observer para nuevos modelos
           const mo = new MutationObserver(muts => {
             muts.forEach(m => {
-              m.addedNodes.forEach(node => {
-                if (!(node instanceof Element)) return;
-                if (node.hasAttribute && node.hasAttribute('gltf-model')) prepareModel(node);
+              m.addedNodes.forEach(n => {
+                if (!(n instanceof Element)) return;
+                if (n.hasAttribute && n.hasAttribute('gltf-model')) prepareEntity(n);
               });
             });
           });
           mo.observe(sceneEl, { childList: true, subtree: true });
 
-          // --- CLAMP DE RIG A BOUNDING BOX DEL NAVMESH ---
+          // --- CLAMP: evitar que el rig salga del bounding box del navmesh ---
           const rig = document.getElementById('rig');
           const nav = document.getElementById('navmesh');
-          let bbox = null;     // THREE.Box3
-          let margin = 0.05;   // pequeño margen para que no se pegue a las paredes
+          let bbox = null;
+          const margin = 0.05;
 
-          function computeBBoxFromNav() {
+          function computeBBox() {
             const obj = nav.getObject3D('mesh') || nav.getObject3D('model');
             if (!obj) return null;
             const box = new THREE.Box3().setFromObject(obj);
             return box;
           }
 
-          // cuando el navmesh carga, computar bbox
           nav.addEventListener('model-loaded', () => {
-            bbox = computeBBoxFromNav();
-            // si el bbox es casi nulo, intenta con objeto directo
-            if (!bbox || bbox.isEmpty()) {
-              bbox = computeBBoxFromNav();
-            }
-            if (bbox) {
-              console.log('[navmesh bbox] min:', bbox.min, 'max:', bbox.max);
-            } else {
-              console.warn('No pude calcular bounding box del navmesh. El clamp no funcionará.');
-            }
+            bbox = computeBBox();
+            if (bbox) console.log('navmesh bbox:', bbox.min, bbox.max);
+            else console.warn('No se pudo calcular bbox del navmesh.');
           });
 
-          // si ya estaba cargado
-          const navObjNow = nav.getObject3D('mesh') || nav.getObject3D('model');
-          if (navObjNow) {
-            bbox = computeBBoxFromNav();
-            if (bbox) console.log('[navmesh bbox loaded early]');
-          }
+          // si ya cargado
+          const now = nav.getObject3D('mesh') || nav.getObject3D('model');
+          if (now) bbox = computeBBox();
 
-          // tick para limitar rig dentro del bbox (solo X,Z). Mantiene Y igual.
-          this.el.addEventListener('loaded', () => {
-            sceneEl.addEventListener('tick', () => {
-              if (!bbox || !rig) return;
-              const pos = rig.object3D.position;
-              // clamp X,Z según bbox
-              const minX = bbox.min.x + margin;
-              const maxX = bbox.max.x - margin;
-              const minZ = bbox.min.z + margin;
-              const maxZ = bbox.max.z - margin;
-              let changed = false;
-              if (pos.x < minX) { pos.x = minX; changed = true; }
-              if (pos.x > maxX) { pos.x = maxX; changed = true; }
-              if (pos.z < minZ) { pos.z = minZ; changed = true; }
-              if (pos.z > maxZ) { pos.z = maxZ; changed = true; }
-              if (changed) {
-                // si tu movement-controls usa velocity, puedes también poner cero (si existe)
-                try {
-                  const mc = rig.components['movement-controls'];
-                  if (mc && mc.velocity) {
-                    mc.velocity.set(0, 0, 0);
-                  }
-                } catch (e) {}
-              }
-            });
+          sceneEl.addEventListener('tick', () => {
+            if (!bbox || !rig) return;
+            const p = rig.object3D.position;
+            const minX = bbox.min.x + margin, maxX = bbox.max.x - margin;
+            const minZ = bbox.min.z + margin, maxZ = bbox.max.z - margin;
+            let changed = false;
+            if (p.x < minX) { p.x = minX; changed = true; }
+            if (p.x > maxX) { p.x = maxX; changed = true; }
+            if (p.z < minZ) { p.z = minZ; changed = true; }
+            if (p.z > maxZ) { p.z = maxZ; changed = true; }
+            if (changed) {
+              try {
+                const mc = rig.components['movement-controls'];
+                if (mc && mc.velocity) mc.velocity.set(0,0,0);
+              } catch(e){}
+            }
           });
 
         } // init
