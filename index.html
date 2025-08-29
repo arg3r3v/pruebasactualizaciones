@@ -117,210 +117,214 @@
   </div>
 
   <!-- Script: genera colliders invisibles (a-box static-body) a partir del bounding box de cada sección -->
-  <script>
+<script>
 (function(){
-  // -------------------------------------------------
-  // CONFIG (cámbialo si quieres otra posición/int)
-  // -------------------------------------------------
-  const DESIRED_LIGHT_POS = new THREE.Vector3(-6, 2, 4); // posición deseada en world coords
-  const POINT_INTENSITY_MULT = 1; // ya aumentaste intensidad en HTML; dejar 1
-  const LAMP_NAME_CANDIDATES = ['lamp','lampara','light','bulb','bombilla','lampholder','lamp_head','lampara_geo','lampara_']; // substrings para buscar
-  const SECTION_IDS = ['sec1','sec2','sec3','sec4','sec5','sec6']; // tus entidades
-  // -------------------------------------------------
+  // Ejecutar cuando el renderer esté disponible
+  const runWhenReady = () => {
+    const sceneEl = document.querySelector('a-scene');
+    if (!sceneEl) { console.warn('No a-scene'); return; }
 
-  const sceneEl = document.querySelector('a-scene');
-  const greenPointEl = document.getElementById('greenLamp');
-  const greenSpotEl  = document.getElementById('greenSpot');
+    // Tus luces / entidades (asegúrate que IDs coincidan)
+    const greenPointEl = document.getElementById('greenLamp');
+    const greenSpotEl  = document.getElementById('greenSpot');
 
-  function enableShadowsOnModel(model) {
-    model.traverse(node => {
-      if (node.isMesh) {
-        node.castShadow = true;
-        node.receiveShadow = true;
-        if (node.material) node.material.needsUpdate = true;
-      }
-    });
-  }
+    // Parámetros que ajustamos (si quieres, cambia)
+    const SHADOW_MAP_SIZE = 2048; // 2048 es buen balance; 4096 = más detalle pero caro
+    const SHADOW_BIAS = -0.0005;
+    const LIGHT_DISTANCE = 20; // asegurar que la luz alcance el piso
+    const SPOT_ANGLE = 1.0;
+    const FORCE_DOUBLE_SIDE = true;
 
-  // Busca una mesh que parezca lámpara dentro del model (nombre contiene algun candidato)
-  function findLampMesh(model) {
-    let found = null;
-    model.traverse(node => {
-      if (found) return;
-      if (node.isMesh && node.name) {
-        const n = node.name.toLowerCase();
-        for (const cand of LAMP_NAME_CANDIDATES) {
-          if (n.includes(cand)) { found = node; break; }
-        }
-      }
-    });
-    return found;
-  }
-
-  // Mueve la luz (elemento A-Frame) a la posición global deseada
-  function setLightPosition(el, vec3) {
-    if (!el) return;
-    el.setAttribute('position', `${vec3.x.toFixed(3)} ${vec3.y.toFixed(3)} ${vec3.z.toFixed(3)}`);
-  }
-
-  // Mueve la malla de la lampara dentro de su jerarquía para que su world position sea igual a desiredPos
-  function moveMeshToWorldPosition(mesh, desiredWorldPos) {
-    if (!mesh) return false;
-    const parent = mesh.parent;
-    if (!parent) return false;
-    // convert desired world pos to parent's local space
-    const localPos = new THREE.Vector3();
-    parent.worldToLocal(localPos.copy(desiredWorldPos));
-    // set mesh.position (local)
-    mesh.position.copy(localPos);
-    // actualizar matrices
-    mesh.updateMatrix();
-    mesh.updateMatrixWorld(true);
-    return true;
-  }
-
-  // Ajustar shadow map quality en three.js para las luces indicadas
-  function boostShadowQuality(lightElId) {
-    const el = document.getElementById(lightElId);
-    if (!el) return;
-    setTimeout(()=>{
-      const lightObj = el.getObject3D('light');
-      if (!lightObj) return;
-      lightObj.castShadow = true;
-      if (lightObj.shadow) {
-        // resolución razonable por defecto: 2048 (subir si tu GPU aguanta)
-        lightObj.shadow.mapSize.width = 2048;
-        lightObj.shadow.mapSize.height = 2048;
-        lightObj.shadow.bias = -0.0005;
-        if (lightObj.shadow.camera) {
-          lightObj.shadow.camera.near = 0.1;
-          lightObj.shadow.camera.far = 50;
-          // para spot/directional ajustamos frustum/camera si existe
-          if (lightObj.shadow.camera.left !== undefined) {
-            const s = 8;
-            lightObj.shadow.camera.left = -s;
-            lightObj.shadow.camera.right = s;
-            lightObj.shadow.camera.top = s;
-            lightObj.shadow.camera.bottom = -s;
+    // Utilidades
+    function setLightParams(el) {
+      if (!el) return;
+      setTimeout(()=>{ // esperar a que three cree el objeto
+        const lightObj = el.getObject3D && el.getObject3D('light');
+        if (!lightObj) { console.warn('light object no encontrado para', el.id); return; }
+        lightObj.castShadow = true;
+        if (lightObj.shadow) {
+          lightObj.shadow.mapSize.width = SHADOW_MAP_SIZE;
+          lightObj.shadow.mapSize.height = SHADOW_MAP_SIZE;
+          lightObj.shadow.bias = SHADOW_BIAS;
+          // punto: ajustar far (para pointlights)
+          if (typeof lightObj.shadow.camera !== 'undefined') {
+            lightObj.shadow.camera.near = 0.1;
+            lightObj.shadow.camera.far = 100;
+            if (lightObj.shadow.camera.updateProjectionMatrix) lightObj.shadow.camera.updateProjectionMatrix();
           }
-          lightObj.shadow.camera.updateProjectionMatrix();
         }
-      }
-    }, 200);
-  }
-
-  // MAIN: procesar cada sección cuando cargue
-  SECTION_IDS.forEach(id => {
-    const ent = document.getElementById(id);
-    if (!ent) return;
-    ent.addEventListener('model-loaded', (ev) => {
-      try {
-        const model = ev.detail.model; // THREE.Object3D root
-        // 1) habilitar sombras en todos los meshes (piso incl.)
-        enableShadowsOnModel(model);
-
-        // 2) buscar si dentro de este model existe la malla de la lampara
-        const lampMesh = findLampMesh(model);
-        if (lampMesh) {
-          // mover la malla para que coincida con DESIRED_LIGHT_POS (world)
-          const moved = moveMeshToWorldPosition(lampMesh, DESIRED_LIGHT_POS);
-          console.log(`Lamp mesh encontrada en ${id} (${lampMesh.name}), moved: ${moved}`);
-          // opcional: si quieres ajustar orientación, puedes rotar mesh.rotation.set(...)
+        // aumentar distancia si existe (point/spot)
+        if ('distance' in lightObj) lightObj.distance = LIGHT_DISTANCE;
+        if (lightObj.isSpotLight) {
+          lightObj.angle = SPOT_ANGLE;
         }
-      } catch (err) {
-        console.warn('Error al procesar model-loaded', id, err);
-      }
-    }, { once: true });
-  });
-
-  // Si modelos ya estaban cacheados/ya cargados antes del listener
-  window.addEventListener('load', () => {
-    SECTION_IDS.forEach(id => {
-      const ent = document.getElementById(id);
-      if (!ent) return;
-      const obj = ent.getObject3D('mesh') || ent.getObject3D('gltf') || ent.getObject3D('object3D');
-      if (obj) {
-        // emular evento
-        ent.emit('model-loaded', { model: obj }, false);
-      }
-    });
-
-    // 3) colocar las luces en la posición deseada (independiente de las mallas)
-    setLightPosition(greenPointEl, DESIRED_LIGHT_POS);
-    setLightPosition(greenSpotEl, DESIRED_LIGHT_POS);
-
-    // 4) forzar renderer settings
-    const renderer = sceneEl.renderer;
-    if (renderer) {
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      renderer.outputEncoding = THREE.sRGBEncoding;
+        console.log('Light params aplicados a', el.id);
+      }, 200);
     }
 
-    // 5) boost shadowmap para las luces (ajusta si hace falta)
-    boostShadowQuality('greenLamp');
-    boostShadowQuality('greenSpot');
+    // Reemplaza un MeshBasicMaterial (unlit) por un MeshStandardMaterial copiando texturas
+    function makeMaterialPBR(oldMat) {
+      if (!oldMat) return null;
+      // If it's already standard, keep it
+      if (oldMat.isMeshStandardMaterial) {
+        oldMat.needsUpdate = true;
+        return oldMat;
+      }
+      // Create new standard material and copy maps & basic props
+      const params = {};
+      if (oldMat.map) params.map = oldMat.map;
+      if (oldMat.normalMap) params.normalMap = oldMat.normalMap;
+      if (oldMat.roughnessMap) params.roughnessMap = oldMat.roughnessMap;
+      if (oldMat.metalnessMap) params.metalnessMap = oldMat.metalnessMap;
+      if (oldMat.aoMap) params.aoMap = oldMat.aoMap;
+      // try copy color if exists
+      if (oldMat.color) params.color = oldMat.color.clone();
+      // conservative defaults
+      params.roughness = (typeof oldMat.roughness !== 'undefined') ? oldMat.roughness : 1.0;
+      params.metalness = (typeof oldMat.metalness !== 'undefined') ? oldMat.metalness : 0.0;
 
-    // 6) debug: crea esfera amarilla pequeña en la posición de la luz para que veas dónde quedó
-    const debugSphere = document.createElement('a-sphere');
-    debugSphere.setAttribute('position', `${DESIRED_LIGHT_POS.x} ${DESIRED_LIGHT_POS.y} ${DESIRED_LIGHT_POS.z}`);
-    debugSphere.setAttribute('radius', '0.06');
-    debugSphere.setAttribute('color', '#ffff66');
-    debugSphere.setAttribute('opacity','0.9');
-    debugSphere.setAttribute('id','lamp-debug-sphere');
-    sceneEl.appendChild(debugSphere);
-    // quitar tras 6s
-    setTimeout(()=>{ const d=document.getElementById('lamp-debug-sphere'); if(d && d.parentNode) d.parentNode.removeChild(d); }, 6000);
+      const newMat = new THREE.MeshStandardMaterial(params);
+      // keep doubleSided if requested
+      if (FORCE_DOUBLE_SIDE) newMat.side = THREE.DoubleSide;
+      newMat.needsUpdate = true;
+      return newMat;
+    }
 
-    console.log('Posicionamiento de luz aplicado en', DESIRED_LIGHT_POS);
-  });
+    // Detectar candidatos a floor: por nombre o por mayor area XZ
+    function detectFloorCandidates() {
+      const meshes = [];
+      sceneEl.object3D.traverse(node => {
+        if (node.isMesh) meshes.push(node);
+      });
+      if (meshes.length === 0) { console.warn('No se encontraron meshes en escena'); return []; }
 
-})();
-</script>
+      // buscar por nombre heurístico
+      const lower = ['floor','piso','ground','tile','tiles','suelo','floor_plane'];
+      const byName = meshes.filter(m => {
+        if (!m.name) return false;
+        const n = m.name.toLowerCase();
+        return lower.some(k => n.includes(k));
+      });
+      if (byName.length) {
+        console.log('Pisos encontrados por nombre:', byName.map(m=>m.name));
+        return byName;
+      }
 
-  <!-- opcional: ajustar shadow map size para luces para mejorar calidad (puede afectar rendimiento) -->
-  <script>
-    document.addEventListener('render-target-loaded', () => {
-      try {
-        const sceneEl = document.querySelector('a-scene');
-        const renderer = sceneEl.renderer;
-        if (!renderer) return;
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      // si no hay por nombre, elegir las 1-2 meshes con mayor área XZ (bounding box)
+      const meshAreas = meshes.map(m => {
+        const bb = new THREE.Box3().setFromObject(m);
+        const size = new THREE.Vector3(); bb.getSize(size);
+        const area = size.x * size.z;
+        return { m, area, size, name: m.name || '(unnamed)' };
+      });
+      meshAreas.sort((a,b)=>b.area-a.area);
+      const top = meshAreas.slice(0,2).map(x => x.m);
+      console.log('Pisos detectados por tamaño (top):', meshAreas.slice(0,3).map(x=>({name:x.name,area:x.area,size:x.size})));
+      return top;
+    }
 
-        // aumenta resolución de shadow maps para las luces indicadas
-        const setShadowQuality = (id) => {
-          const lightEl = document.getElementById(id);
-          if (!lightEl) return;
-          const lightObj = lightEl.getObject3D('light');
-          if (!lightObj) return;
-          lightObj.castShadow = true;
-          if (lightObj.shadow && lightObj.shadow.mapSize) {
-            lightObj.shadow.mapSize.width = 2048;
-            lightObj.shadow.mapSize.height = 2048;
-            lightObj.shadow.bias = -0.0005;
-            if (lightObj.shadow.camera) {
-              lightObj.shadow.camera.near = 0.1;
-              lightObj.shadow.camera.far = 30;
-              if (lightObj.shadow.camera.left !== undefined) {
-                const s = 6;
-                lightObj.shadow.camera.left = -s;
-                lightObj.shadow.camera.right = s;
-                lightObj.shadow.camera.top = s;
-                lightObj.shadow.camera.bottom = -s;
-              }
-              lightObj.shadow.camera.updateProjectionMatrix();
+    // Forzar receiveShadow y reemplazar material si es necesario
+    function fixFloorMesh(mesh) {
+      console.log('Procesando posible piso:', mesh.name || mesh.uuid);
+      mesh.receiveShadow = true;
+      mesh.castShadow = false; // el piso normalmente no castea sombras
+
+      // comprobar material(s)
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach((mat, i) => {
+          if (mat && mat.isMeshBasicMaterial) {
+            const newMat = makeMaterialPBR(mat);
+            if (newMat) {
+              mesh.material[i] = newMat;
+              console.log(`Material del submesh ${i} (basic) reemplazado por MeshStandardMaterial`);
+            }
+          } else if (mat && !mat.isMeshStandardMaterial) {
+            // otros tipos: intentar promover a standard conservando mapas
+            const newMat = makeMaterialPBR(mat);
+            if (newMat) mesh.material[i] = newMat;
+          }
+          if (mesh.material[i]) {
+            mesh.material[i].needsUpdate = true;
+            mesh.material[i].side = THREE.DoubleSide; // evitar problemas de normales invertidas
+          }
+        });
+      } else {
+        const mat = mesh.material;
+        if (mat && mat.isMeshBasicMaterial) {
+          const newMat = makeMaterialPBR(mat);
+          if (newMat) mesh.material = newMat;
+          console.log('Material del piso reemplazado por MeshStandardMaterial (era MeshBasicMaterial)');
+        } else if (mat && !mat.isMeshStandardMaterial) {
+          // promover si no es standard
+          const newMat = makeMaterialPBR(mat);
+          if (newMat) mesh.material = newMat;
+        }
+        if (mesh.material) {
+          mesh.material.needsUpdate = true;
+          mesh.material.side = THREE.DoubleSide;
+        }
+      }
+
+      // Forzar recompute normals si están raras
+      if (mesh.geometry && mesh.geometry.attributes && !mesh.geometry.attributes.normal) {
+        mesh.geometry.computeVertexNormals();
+      }
+      console.log('Piso preparado para recibir sombras.');
+    }
+
+    // MAIN
+    try {
+      // 1) force renderer settings
+      if (sceneEl.renderer) {
+        sceneEl.renderer.shadowMap.enabled = true;
+        sceneEl.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        sceneEl.renderer.outputEncoding = THREE.sRGBEncoding;
+      }
+
+      // 2) set params on lights
+      setLightParams(greenPointEl);
+      setLightParams(greenSpotEl);
+
+      // 3) find floors and patch them
+      // wait a tick to ensure glTF models loaded
+      setTimeout(() => {
+        const floors = detectFloorCandidates();
+        if (floors.length === 0) {
+          console.warn('No se detectó piso por nombre ni por tamaño. Intenta inspeccionar nombres de meshes en el glTF viewer.');
+        }
+        floors.forEach(f => fixFloorMesh(f));
+      }, 500);
+
+      // 4) also traverse each loaded model and enable cast/receive on all meshes (safety)
+      setTimeout(() => {
+        sceneEl.object3D.traverse(node => {
+          if (node.isMesh) {
+            node.castShadow = true;
+            node.receiveShadow = node.receiveShadow || false; // no sobreescribir piso decision
+
+            // If any mesh uses MeshBasicMaterial (unlit) and we want it lit, convert
+            if (node.material && node.material.isMeshBasicMaterial) {
+              // Convert but keep textures
+              const newMat = makeMaterialPBR(node.material);
+              if (newMat) node.material = newMat;
             }
           }
-        };
+        });
+        console.log('Force cast/receive en todos los meshes aplicado.');
+      }, 900);
 
-        setShadowQuality('greenLamp');
-        setShadowQuality('greenSpot');
-      } catch (err) {
-        console.warn('No se pudo ajustar shadow maps:', err);
-      }
-    });
-  </script>
+      // 5) Final notice:
+      console.log('Script de debug y corrección de piso/sombras: ejecutado. Revisa la consola para mensajes detallados.');
+    } catch (err) {
+      console.error('Error al intentar corregir sombras en piso:', err);
+    }
+  };
+
+  // Ejecutar cuando Three/renderer listos
+  if (document.readyState === 'complete') runWhenReady();
+  else window.addEventListener('load', runWhenReady);
+})();
+</script>
 
   <script defer src="script.js"></script>
 </body>
