@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>A-Frame escena (v1.6.0) - Movimiento suavizado y sombras mejoradas</title>
+  <title>A-Frame v1.6.0 — Movimiento suavizado y sombras con menor ruido</title>
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <style>
-    html, body { margin: 0; height: 100%; background: #000; }
-    a-scene { width: 100%; height: 100vh; display: block; }
+    html,body { margin:0; height:100%; background:#000; }
+    a-scene { width:100%; height:100vh; display:block; }
   </style>
 </head>
 <body>
-  <a-scene id="scene" background="color: #000" renderer="colorManagement: true" embedded>
+  <a-scene id="scene" background="color:#000" embedded renderer="colorManagement: true">
 
-    <!-- Assets (rutas EXACTAS solicitadas) -->
+    <!-- ASSETS (rutas EXACTAS requeridas) -->
     <a-assets timeout="0">
       <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
       <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
       <a-asset-item id="paredes" src="models/paredes.glb"></a-asset-item>
 
-      <a-asset-item id="assets1" src="models/assets1.glb"></a-asset-item>
+      <a-asset-item id="assets1" src="models/asset1s.glb"></a-asset-item>
       <a-asset-item id="assets2" src="models/assets2.glb"></a-asset-item>
       <a-asset-item id="assets3" src="models/assets3.glb"></a-asset-item>
       <a-asset-item id="assets4" src="models/assets4.glb"></a-asset-item>
@@ -28,22 +28,18 @@
       <a-asset-item id="assets7" src="models/assets7.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Luz puntual verde en el centro (NO mover posición/atributos básicos) -->
+    <!-- GREEN LAMP: mantengo la posición y atributos básicos que pediste -->
     <a-entity id="greenLamp"
               position="0 1 0"
               light="type: point; color: #2bff7a; intensity: 1.6; distance: 12; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- Luz de relleno hemisférica para bajar contraste y percibir menos ruido -->
-    <a-entity light="type: hemisphere; color: #ffffff; groundColor: #222222; intensity: 0.35"></a-entity>
-
-    <!-- Rig + Cámara -->
-    <!-- La posición seguirá siendo calculada dinámicamente por el script para centrar la cámara en el cuarto -->
+    <!-- RIG y CÁMARA (posición recalculada dinámicamente desde bbox combinado) -->
     <a-entity id="rig" position="1.5 1.6 1.5" smooth-walk>
       <a-camera id="camera" position="0 0 0" look-controls="pointerLockEnabled: false; touchEnabled: true"></a-camera>
     </a-entity>
 
-    <!-- Modelos GLB (cada uno en su propia entidad, sin tocar transformaciones internas) -->
+    <!-- Modelos GLB en sus propias entidades -->
     <a-entity id="techo-entity"    gltf-model="#techo"    shadow="cast: true; receive: true"></a-entity>
     <a-entity id="piso-entity"     gltf-model="#piso"     shadow="cast: true; receive: true"></a-entity>
     <a-entity id="paredes-entity"  gltf-model="#paredes"  shadow="cast: true; receive: true"></a-entity>
@@ -56,291 +52,331 @@
     <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast: true; receive: true"></a-entity>
     <a-entity id="asset7-entity" gltf-model="#assets7" shadow="cast: true; receive: true"></a-entity>
 
-    <!-- Receptor de sombras: plano invisible que cubre el piso del cuarto (se ajusta automáticamente) -->
-    <a-plane id="shadow-receiver"
-             rotation="-90 0 0"
-             position="1.5 0 1.5"
-             width="3" height="3"
-             material="color:#000; opacity:0; transparent:true">
-    </a-plane>
+    <!-- Plano receptor invisible para sombras (se ajusta al tamaño del cuarto) -->
+    <a-plane id="shadow-receiver" rotation="-90 0 0" position="1.5 0 1.5" width="3" height="3"
+             material="color:#000; opacity:0; transparent:true"></a-plane>
 
-    <!-- Componente smooth-walk y lógica de sombras / centrado -->
     <script>
+      /* ========================
+         MOVIMIENTO: smooth-walk v2
+         - velocidad muy baja por defecto (0.06 m/s)
+         - smoothing fuerte
+         - clamp por frame para evitar saltos
+         - se mueve según Yaw de la cámara (no usa componente Y)
+         - acepta touch (tap -> avanza) y teclado WASD
+         ======================== */
       AFRAME.registerComponent('smooth-walk', {
         schema: {
-          speed: { type: 'number', default: 0.45 },       // m/s (reducido para menos desplazamiento)
-          acceleration: { type: 'number', default: 8 },   // para respuesta al cambiar velocidad
-          smoothing: { type: 'number', default: 0.12 },   // factor de lerp (más alto = más suave)
-          touchSpeed: { type: 'number', default: 0.25 }   // velocidad al tocar pantalla (móvil)
+          speed: { type: 'number', default: 0.06 },     // objetivo: movimiento corto
+          smoothing: { type: 'number', default: 14.0 }, // mayor = más amortiguado
+          maxStep: { type: 'number', default: 0.03 }    // m por frame máximo
         },
         init: function () {
-          this.velocity = new THREE.Vector3();
-          this.desired = new THREE.Vector3();
-          this.keys = { forward: 0, backward: 0, left: 0, right: 0 };
-          this.touchForward = false;
-          this.prevTime = performance.now();
-          const el = this.el;
-
-          // Listeners teclado
-          this.onKeyDown = (e) => {
-            switch (e.code) {
-              case 'KeyW': case 'ArrowUp': this.keys.forward = 1; break;
-              case 'KeyS': case 'ArrowDown': this.keys.backward = 1; break;
-              case 'KeyA': case 'ArrowLeft': this.keys.left = 1; break;
-              case 'KeyD': case 'ArrowRight': this.keys.right = 1; break;
+          this.vel = new THREE.Vector3();
+          this.target = new THREE.Vector3();
+          this.keys = { f:0,b:0,l:0,r:0 };
+          this.touch = false;
+          this.last = performance.now();
+          this.bounds = null;
+          // keyboard
+          this._kd = (e) => {
+            switch(e.code){
+              case 'KeyW': case 'ArrowUp': this.keys.f = 1; break;
+              case 'KeyS': case 'ArrowDown': this.keys.b = 1; break;
+              case 'KeyA': case 'ArrowLeft': this.keys.l = 1; break;
+              case 'KeyD': case 'ArrowRight': this.keys.r = 1; break;
             }
           };
-          this.onKeyUp = (e) => {
-            switch (e.code) {
-              case 'KeyW': case 'ArrowUp': this.keys.forward = 0; break;
-              case 'KeyS': case 'ArrowDown': this.keys.backward = 0; break;
-              case 'KeyA': case 'ArrowLeft': this.keys.left = 0; break;
-              case 'KeyD': case 'ArrowRight': this.keys.right = 0; break;
+          this._ku = (e) => {
+            switch(e.code){
+              case 'KeyW': case 'ArrowUp': this.keys.f = 0; break;
+              case 'KeyS': case 'ArrowDown': this.keys.b = 0; break;
+              case 'KeyA': case 'ArrowLeft': this.keys.l = 0; break;
+              case 'KeyD': case 'ArrowRight': this.keys.r = 0; break;
             }
           };
-          window.addEventListener('keydown', this.onKeyDown);
-          window.addEventListener('keyup', this.onKeyUp);
+          window.addEventListener('keydown', this._kd);
+          window.addEventListener('keyup', this._ku);
+          // touch simple
+          this._ts = () => { this.touch = true; };
+          this._te = () => { this.touch = false; };
+          window.addEventListener('touchstart', this._ts, { passive:true });
+          window.addEventListener('touchend', this._te);
 
-          // Touch simple: tocar pantalla = avanzar (útil en móvil)
-          this.onTouchStart = (e) => { this.touchForward = true; };
-          this.onTouchEnd = (e) => { this.touchForward = false; };
-          window.addEventListener('touchstart', this.onTouchStart, { passive: true });
-          window.addEventListener('touchend', this.onTouchEnd);
-
-          // Prevent runaway scale issues: ensure rig scale is 1
+          // ensure scale 1
           this.el.object3D.scale.set(1,1,1);
         },
         remove: function () {
-          window.removeEventListener('keydown', this.onKeyDown);
-          window.removeEventListener('keyup', this.onKeyUp);
-          window.removeEventListener('touchstart', this.onTouchStart);
-          window.removeEventListener('touchend', this.onTouchEnd);
+          window.removeEventListener('keydown', this._kd);
+          window.removeEventListener('keyup', this._ku);
+          window.removeEventListener('touchstart', this._ts);
+          window.removeEventListener('touchend', this._te);
         },
         tick: function (time, delta) {
-          const dt = Math.min(delta / 1000, 0.05); // limitar dt para estabilidad
-          const data = this.data;
-          const camEl = this.el.querySelector('[camera]') || this.el.sceneEl.camera && this.el.sceneEl.camera.el;
-          // Obtener forward/right basados en la cámara (mirando horizontalmente)
-          let forward = new THREE.Vector3();
+          const dt = Math.min(delta/1000, 0.05);
+          // compute yaw-only forward vector from camera
+          const camEl = this.el.querySelector('[camera]');
+          let yawQuaternion = new THREE.Quaternion();
           if (camEl && camEl.object3D) {
-            camEl.object3D.getWorldDirection(forward);
+            // extract yaw (rotation around Y) from camera quaternion
+            const q = camEl.object3D.quaternion.clone();
+            // Convert to Euler then keep only Y
+            const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
+            const yaw = e.y;
+            yawQuaternion.setFromEuler(new THREE.Euler(0, yaw, 0));
           } else {
-            this.el.object3D.getWorldDirection(forward);
+            yawQuaternion.copy(this.el.object3D.quaternion);
+            yawQuaternion.set(0, yawQuaternion.y, 0, yawQuaternion.w);
           }
-          forward.y = 0;
-          forward.normalize();
+
+          const forward = new THREE.Vector3(0,0,-1).applyQuaternion(yawQuaternion).setY(0).normalize();
           const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
 
-          // Determinar input
-          const moveZ = (this.keys.forward - this.keys.backward) + (this.touchForward ? 1 : 0);
-          const moveX = (this.keys.right - this.keys.left);
+          const moveZ = (this.keys.f - this.keys.b) + (this.touch ? 1 : 0);
+          const moveX = (this.keys.r - this.keys.l);
 
-          // Desired velocity in world-space (XZ plane)
-          this.desired.set(0,0,0);
+          this.target.set(0,0,0);
           if (Math.abs(moveZ) > 0 || Math.abs(moveX) > 0) {
-            // combine vectors
-            this.desired.add(forward.clone().multiplyScalar(moveZ));
-            this.desired.add(right.clone().multiplyScalar(moveX));
-            this.desired.normalize();
-            // if touch forward, use touchSpeed
-            const effectiveSpeed = this.touchForward ? data.touchSpeed : data.speed;
-            this.desired.multiplyScalar(effectiveSpeed);
-          } else {
-            // no input => target zero
-            this.desired.set(0,0,0);
+            this.target.add(forward.clone().multiplyScalar(moveZ));
+            this.target.add(right.clone().multiplyScalar(moveX));
+            this.target.normalize();
+            this.target.multiplyScalar(this.data.speed);
           }
 
-          // Smoothly interpolate velocity towards desired
-          // factor depends on smoothing and dt (bigger smoothing => faster lerp per frame)
-          const lerpFactor = 1 - Math.exp(- (data.smoothing * 30) * dt); // smoother/time-dependent
-          this.velocity.lerp(this.desired, lerpFactor);
+          // smoothing (exponential)
+          const alpha = 1 - Math.exp(-this.data.smoothing * dt);
+          this.vel.lerp(this.target, alpha);
 
-          // Apply displacement relative to world axes
-          const displacement = this.velocity.clone().multiplyScalar(dt);
-          this.el.object3D.position.add(displacement);
-        }
+          // clamp step length
+          const step = this.vel.clone().multiplyScalar(dt);
+          const stepLen = step.length();
+          const maxStep = this.data.maxStep;
+          if (stepLen > maxStep) {
+            step.multiplyScalar(maxStep / stepLen);
+          }
+
+          this.el.object3D.position.add(step);
+
+          // clamp into bounds if set
+          if (this.bounds) {
+            const p = this.el.object3D.position;
+            p.x = Math.min(Math.max(p.x, this.bounds.minX), this.bounds.maxX);
+            p.z = Math.min(Math.max(p.z, this.bounds.minZ), this.bounds.maxZ);
+            p.y = Math.min(Math.max(p.y, this.bounds.minY), this.bounds.maxY);
+            this.el.object3D.position.copy(p);
+          }
+        },
+        setBounds: function(bounds){ this.bounds = bounds; }
       });
 
-      (function () {
+      /* ========================
+         LOGICA CENTRAL: centrado de cámara, sombras, y saneado de materiales
+         - centra rig en bbox combinado de techo/piso/paredes
+         - configura renderer y greenLamp.shadow internals (no mover posición)
+         - remove high-frequency maps (normal/roughness) si existen para reducir ruido
+         ======================== */
+      (function(){
         const sceneEl = document.getElementById('scene');
         const rigEl = document.getElementById('rig');
-        const cameraEl = document.getElementById('camera');
-        const shadowReceiverEl = document.getElementById('shadow-receiver');
-
-        const mainIds = ['paredes-entity', 'piso-entity', 'techo-entity'];
+        const camEl = document.getElementById('camera');
+        const shadowPlane = document.getElementById('shadow-receiver');
+        const mainIds = ['paredes-entity','piso-entity','techo-entity'];
         const loaded = {};
         mainIds.forEach(id => loaded[id] = null);
 
-        function isMobile() {
+        function isMobile(){
           try {
             return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
-                   || 'ontouchstart' in window
-                   || navigator.maxTouchPoints > 0;
+                   || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
           } catch (e) { return false; }
         }
 
-        function extractObjectFromEvent(el, evt) {
-          if (evt && evt.detail && evt.detail.model) {
+        function extractObj(el, evt){
+          if (evt && evt.detail && evt.detail.model){
             const m = evt.detail.model;
             return m.scene || m;
           }
           return el.getObject3D('mesh') || el.getObject3D('gltf') || el.object3D;
         }
 
-        // Center camera when main models loaded (same logic que antes)
-        function tryCenterCamera() {
+        function centerAndBoundsIfReady(){
           const objs = Object.values(loaded).filter(Boolean);
           if (objs.length < mainIds.length) return;
-
           const box = new THREE.Box3();
-          objs.forEach(obj => {
-            try { box.expandByObject(obj); } catch (e) {}
+          objs.forEach(o=>{
+            try { box.expandByObject(o); } catch(e){ console.warn(e); }
           });
-
-          if (box.isEmpty()) {
-            rigEl.setAttribute('position', '1.5 1.6 1.5');
-            cameraEl.setAttribute('position','0 0 0');
+          if (box.isEmpty()){
+            rigEl.object3D.position.set(1.5,1.6,1.5);
+            camEl.setAttribute('position','0 0 0');
             return;
           }
-
-          const center = new THREE.Vector3();
-          box.getCenter(center);
+          const center = new THREE.Vector3(); box.getCenter(center);
+          const size = new THREE.Vector3(); box.getSize(size);
           const baseY = box.min.y;
-          const cameraHeight = 1.6;
-          const rigPos = { x: center.x, y: baseY + cameraHeight, z: center.z };
+          const rigY = baseY + 1.6;
+          rigEl.object3D.position.set(center.x, rigY, center.z);
+          camEl.setAttribute('position','0 0 0');
 
-          rigEl.object3D.position.set(rigPos.x, rigPos.y, rigPos.z);
-          cameraEl.setAttribute('position', '0 0 0');
+          // shadow plane adjust
+          const planeW = Math.max(0.01, size.x);
+          const planeH = Math.max(0.01, size.z);
+          shadowPlane.setAttribute('position', `${center.x} ${baseY + 0.001} ${center.z}`);
+          shadowPlane.setAttribute('width', planeW);
+          shadowPlane.setAttribute('height', planeH);
 
-          // Ajustar plano receptor
-          const size = new THREE.Vector3();
-          box.getSize(size);
-          const planeWidth = Math.max(0.01, size.x);
-          const planeHeight = Math.max(0.01, size.z);
-          shadowReceiverEl.setAttribute('position', `${center.x} ${baseY + 0.001} ${center.z}`);
-          shadowReceiverEl.setAttribute('width', planeWidth);
-          shadowReceiverEl.setAttribute('height', planeHeight);
+          // bounds for movement: small margin
+          const margin = 0.05;
+          const bounds = {
+            minX: box.min.x + margin, maxX: box.max.x - margin,
+            minZ: box.min.z + margin, maxZ: box.max.z - margin,
+            minY: rigY, maxY: rigY
+          };
+          const comp = rigEl.components['smooth-walk'];
+          if (comp && typeof comp.setBounds === 'function') comp.setBounds(bounds);
 
-          console.log('Rig centrado en:', rigPos);
+          console.log('Centered rig at', rigEl.object3D.position, 'bounds', bounds);
         }
 
-        mainIds.forEach(id => {
+        // Listen model-loaded for essential models
+        mainIds.forEach(id=>{
           const el = document.getElementById(id);
-          if (!el) { loaded[id] = null; return; }
-          el.addEventListener('model-loaded', function (evt) {
-            loaded[id] = extractObjectFromEvent(el, evt);
-            // ensure its meshes receive/cast shadows
+          if (!el){ loaded[id] = null; return; }
+          el.addEventListener('model-loaded', function(evt){
+            loaded[id] = extractObj(el, evt);
+            // ensure meshes cast/receive shadows and sanitize materials
             if (loaded[id]) {
-              loaded[id].traverse(node => {
-                if (node.isMesh) {
-                  node.castShadow = true;
-                  node.receiveShadow = true;
-                  if (node.material && node.material.map) {
-                    try { node.material.map.encoding = THREE.sRGBEncoding; node.material.needsUpdate = true; } catch(e){}
-                  }
-                }
-              });
+              sanitizeAndEnableShadows(loaded[id]);
             }
-            tryCenterCamera();
-          }, { once: true });
+            centerAndBoundsIfReady();
+          }, { once:true });
         });
 
-        // Also ensure every asset entity sets cast/receive on model-loaded
+        // For all assets, ensure sanitize and shadow flags
         const allAssetIds = [
           'techo-entity','piso-entity','paredes-entity',
           'asset1-entity','asset2-entity','asset3-entity','asset4-entity','asset5-entity','asset6-entity','asset7-entity'
         ];
-        allAssetIds.forEach(id => {
+        allAssetIds.forEach(id=>{
           const el = document.getElementById(id);
           if (!el) return;
-          el.addEventListener('model-loaded', function (evt) {
-            const obj = extractObjectFromEvent(el, evt);
+          el.addEventListener('model-loaded', function(evt){
+            const obj = extractObj(el, evt);
             if (!obj) return;
-            obj.traverse(node => {
-              if (node.isMesh) {
-                node.castShadow = true;
-                node.receiveShadow = true;
-                if (node.material && node.material.map) {
-                  try { node.material.map.encoding = THREE.sRGBEncoding; node.material.needsUpdate = true; } catch(e){}
-                }
-              }
-            });
+            sanitizeAndEnableShadows(obj);
           });
         });
 
-        // Renderer + shadow tuning
-        sceneEl.addEventListener('render-target-loaded', function () {
+        // Sanitizar materiales: remover normal/roughness maps si existen y atenuar metalness/specular
+        function sanitizeAndEnableShadows(obj){
+          obj.traverse(node=>{
+            if (node.isMesh) {
+              node.castShadow = true;
+              node.receiveShadow = true;
+              const mat = node.material;
+              if (mat) {
+                // If there is a normal/roughness map, remove it to reduce high-frequency shading
+                let changed = false;
+                try {
+                  if (mat.normalMap) { mat.normalMap = null; changed = true; }
+                  if (mat.normalScale) { mat.normalScale = new THREE.Vector2(0,0); changed = true; }
+                  if (mat.roughnessMap) { mat.roughnessMap = null; changed = true; }
+                  if (typeof mat.metalness !== 'undefined') {
+                    mat.metalness = 0.0; changed = true;
+                  }
+                  if (typeof mat.roughness !== 'undefined') {
+                    // raise roughness to soften speculars that exaggerate noise
+                    mat.roughness = Math.max(0.75, mat.roughness || 0.75); changed = true;
+                  }
+                  if (mat.map && mat.map.encoding !== THREE.sRGBEncoding) {
+                    mat.map.encoding = THREE.sRGBEncoding; changed = true;
+                  }
+                  if (changed) mat.needsUpdate = true;
+                } catch(e){ console.warn('sanitize material error', e); }
+              }
+            }
+          });
+        }
+
+        // Render-target loaded: configure renderer & greenLamp.shadow
+        sceneEl.addEventListener('render-target-loaded', function(){
           const renderer = sceneEl.renderer;
           if (!renderer) { console.warn('Renderer no disponible'); return; }
 
-          // Shadow & color management
-          renderer.shadowMap.enabled = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.outputEncoding = THREE.sRGBEncoding;
-          renderer.physicallyCorrectLights = true;
-          // PixelRatio reducido para estabilidad y menos jitter (ruido)
+          // Force pixel ratio =1 (reduce jitter/noise)
           renderer.setPixelRatio(1);
 
-          // Tone mapping estabilizador (opcional)
-          try {
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.0;
-          } catch (e) {}
+          // Choose shadow map type: VSM if available (less grain when supported), otherwise PCFSoft
+          if (typeof THREE.VSMShadowMap !== 'undefined') {
+            renderer.shadowMap.type = THREE.VSMShadowMap;
+            console.log('Using VSMShadowMap');
+          } else {
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            console.log('Using PCFSoftShadowMap');
+          }
+          renderer.shadowMap.enabled = true;
+          renderer.outputEncoding = THREE.sRGBEncoding;
+          renderer.physicallyCorrectLights = true;
 
-          // Ajustar greenLamp shadows internamente (sin mover la luz)
+          // Configure greenLamp's shadow internals (no change to its position/color)
           const greenLampEl = document.getElementById('greenLamp');
           const lightObj = greenLampEl && greenLampEl.getObject3D ? greenLampEl.getObject3D('light') : null;
-
           if (lightObj && lightObj.shadow) {
             try {
               lightObj.castShadow = true;
-              // Elegimos 2048 como tope por compatibilidad GPU; en mobile usar 1024
               const mobile = isMobile();
+              // safe map sizes: mobile 1024, desktop 2048 (clamped)
               const chosen = mobile ? 1024 : 2048;
               if (lightObj.shadow.mapSize && typeof lightObj.shadow.mapSize.set === 'function') {
                 lightObj.shadow.mapSize.set(chosen, chosen);
               }
-              // Suavizado mayor para PCF
+              // Use normalBias (if available) to reduce acne, radius to smooth PCF/VSM
+              if (typeof lightObj.shadow.normalBias !== 'undefined') {
+                lightObj.shadow.normalBias = 0.05; // helps acne on complex geometry
+              } else if (typeof lightObj.normalBias !== 'undefined') {
+                lightObj.normalBias = 0.05;
+              }
               if (typeof lightObj.shadow.radius !== 'undefined') {
-                lightObj.shadow.radius = 12;
+                lightObj.shadow.radius = 10; // softening
               }
-              // Bias ajustado para reducir acne; negativo pequeño
+              // small bias to avoid self-shadow acne
               if (typeof lightObj.shadow.bias !== 'undefined') {
-                lightObj.shadow.bias = -0.0008;
+                lightObj.shadow.bias = -0.00012;
               }
-              if (lightObj.shadow) lightObj.shadow.needsUpdate = true;
-              console.log('GreenLamp shadow configured: size=', chosen, 'radius=', lightObj.shadow.radius, 'bias=', lightObj.shadow.bias);
-            } catch (err) {
-              console.warn('No se pudo configurar completamente greenLamp.shadow', err);
+              if (lightObj.shadow && typeof lightObj.shadow.needsUpdate !== 'undefined') {
+                lightObj.shadow.needsUpdate = true;
+              }
+              console.log('greenLamp shadow configured', { chosen, radius: lightObj.shadow.radius, normalBias: lightObj.shadow.normalBias || lightObj.normalBias, bias: lightObj.shadow.bias });
+            } catch(e){
+              console.warn('Error configuring greenLamp.shadow', e);
             }
           } else {
-            console.warn('No se encontró greenLamp.light para configurar sombras');
+            console.warn('greenLamp.light not found yet');
           }
 
-          // Asegurar que el receptor de sombras reciba
-          const planeObj = shadowReceiverEl.getObject3D('mesh') || shadowReceiverEl.object3D;
+          // Ensure shadow-receiver receives shadows
+          const planeObj = shadowPlane.getObject3D('mesh') || shadowPlane.object3D;
           if (planeObj) {
-            planeObj.traverse(node => {
-              if (node.isMesh) {
-                node.receiveShadow = true;
-                node.castShadow = false;
-                if (node.material) {
-                  node.material.transparent = true;
-                  node.material.opacity = 0;
-                  node.material.needsUpdate = true;
+            planeObj.traverse(n => {
+              if (n.isMesh) {
+                n.receiveShadow = true;
+                n.castShadow = false;
+                if (n.material) {
+                  n.material.transparent = true;
+                  n.material.opacity = 0;
+                  n.material.needsUpdate = true;
                 }
               }
             });
           }
 
-          console.log('Renderer configurado. shadowMap.enabled=', renderer.shadowMap.enabled, 'type=', renderer.shadowMap.type);
+          console.log('Renderer & shadows configured (pixelRatio=1).');
         });
 
-        // Fallback: forzar centrado si model-loaded no ocurre por timeout
-        setTimeout(tryCenterCamera, 6000);
+        // Fallback: force center if model-loaded didn't fire in 6s
+        setTimeout(centerAndBoundsIfReady, 6000);
       })();
     </script>
-
   </a-scene>
 </body>
 </html>
