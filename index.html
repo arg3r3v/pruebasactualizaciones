@@ -3,27 +3,27 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Galería — Correcciones profundas sombras & alpha</title>
+  <title>Galería — Corregido (movimiento + centrado + sombras)</title>
 
+  <!-- A-Frame + extras (movement-controls, nipple) -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <style>
-    html,body{margin:0;height:100%;background:#000}
-    a-scene{width:100%;height:100vh;display:block}
-  </style>
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
+
+  <style> html,body{height:100%;margin:0;background:#000} a-scene{width:100%;height:100vh;display:block} </style>
 </head>
 <body>
   <a-scene id="scene"
-           background="color:#000"
+           background="color:#000000"
            embedded
-           renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true; logarithmicDepthBuffer:true"
+           renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true"
            shadow="type:pcfsoft; autoUpdate:true">
+
     <a-assets timeout="0">
-      <!-- esenciales para centrar/medidas -->
+      <!-- reemplaza con tus GLBs -->
       <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
       <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
       <a-asset-item id="paredes" src="models/paredes.glb"></a-asset-item>
 
-      <!-- props / assets -->
       <a-asset-item id="assets1" src="models/assets1.glb"></a-asset-item>
       <a-asset-item id="assets2" src="models/assets2.glb"></a-asset-item>
       <a-asset-item id="assets3" src="models/assets3.glb"></a-asset-item>
@@ -32,20 +32,24 @@
       <a-asset-item id="assets6" src="models/assets6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Muy tenue ambient para no perder la dominante verde -->
-    <a-entity light="type:ambient; color:#0b0b0b; intensity:0.08"></a-entity>
+    <!-- ambient tenue -->
+    <a-entity light="type:ambient; intensity:0.12; color:#0b0b0b"></a-entity>
 
-    <!-- Usamos SPOT para sombras más controladas (menos ruido que point cube) -->
+    <!-- Luz principal: SPOT (menos ruido que point light cubemap) -->
+    <!-- posición solicitada: x:-6 y:2 z:4 -->
     <a-entity id="greenLamp" position="-6 2 4"
               light="type:spot; color:#2bff7a; intensity:144; distance:30; angle:1.2; penumbra:0.6; decay:2; castShadow:true">
     </a-entity>
 
-    <!-- RIG + cámara (pequeña y centrada; la Y real se recalculará desde bbox) -->
-    <a-entity id="rig" position="0 1.6 0" smooth-walk>
+    <!-- RIG con movement-controls (extras) -->
+    <a-entity id="rig"
+              movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple"
+              position="0 1.6 0">
+      <!-- cámara "pequeña" y centrada dentro del rig (se recalcula luego) -->
       <a-entity camera id="camera" position="0 0 0" look-controls="pointerLockEnabled:false; touchEnabled:true"></a-entity>
     </a-entity>
 
-    <!-- Escena: techo/piso/paredes y assets -->
+    <!-- Entidades GLB -->
     <a-entity id="techo-entity"   gltf-model="#techo"   shadow="cast:true; receive:true"></a-entity>
     <a-entity id="piso-entity"    gltf-model="#piso"    shadow="cast:true; receive:true"></a-entity>
     <a-entity id="paredes-entity" gltf-model="#paredes" shadow="cast:true; receive:true"></a-entity>
@@ -57,302 +61,165 @@
     <a-entity id="asset5-entity" gltf-model="#assets5" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast:true; receive:true"></a-entity>
 
-    <!-- plano receptor opcional (se actualizará según bbox) -->
-    <a-plane id="shadow-receiver"
-             rotation="-90 0 0"
-             position="0 0 0"
-             width="1" height="1"
-             material="color:#000; opacity:0; transparent:true"
-             shadow="receive:true"></a-plane>
+    <!-- receptor de sombras (invisible) que ajustamos al bbox -->
+    <a-plane id="shadow-receiver" rotation="-90 0 0" position="0 0 0" width="1" height="1"
+             material="color:#000; opacity:0; transparent:true" shadow="receive:true"></a-plane>
 
   </a-scene>
 
   <script>
-  // ============================================
-  // Pipeline robusto: renderer config, sombras, materials, alpha fixes
-  // ============================================
   (function(){
-    const sceneEl = document.getElementById('scene');
-    if (!sceneEl) return;
+    const scene = document.getElementById('scene');
+    if (!scene) return;
 
-    // Recomendados (ajusta si quieres):
-    const TARGET_MIN_TEX = 1024;
-    const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 1.5);
-    const DESIRED_SHADOW_SIZE = 4096; // intentamos 4096 si la GPU lo admite
-    const SHADOW_BIAS = -0.0004;
-    const SHADOW_NORMAL_BIAS = 0.02;
-    const SHADOW_RADIUS = 2.5;
+    // Parche seguro para evitar sombras enormes que peten GPU: 2048 default, 1024 en mobile
+    const MAX_SAFE_SHADOW = (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ? 1024 : 2048;
+    const CAMERA_HEIGHT = 1.6; // altura "pequeña" por defecto (ajusta si quieres)
+    const RIG_MARGIN = 0.05;
 
-    // Helpers
-    function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
-    function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
-    function preferSRGBForKey(key){
-      const col = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
-      return col.indexOf(key) !== -1;
-    }
-
-    // Esperar renderer listo para setear parametros globales
-    sceneEl.addEventListener('render-target-loaded', ()=> {
+    // Utility: esperar a renderer y luego configurar global renderer flags
+    scene.addEventListener('render-target-loaded', () => {
       try {
-        const renderer = sceneEl.renderer;
+        const renderer = scene.renderer;
         if (!renderer) return;
-        renderer.setPixelRatio(MAX_PIXELRATIO);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
         renderer.outputEncoding = THREE.sRGBEncoding;
         renderer.physicallyCorrectLights = true;
         renderer.shadowMap.enabled = true;
-        // preferir VSM si disponible (suaviza granulado), si no -> PCFSoft
+        // elegir tipo de shadowMap menos ruidoso si existe
         if (THREE.VSMShadowMap) renderer.shadowMap.type = THREE.VSMShadowMap;
         else renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        console.log('[scene] renderer configured: pixelRatio=', renderer.getPixelRatio(), 'shadowMap=', renderer.shadowMap.type);
-      } catch(e){ console.warn('[scene] renderer config failed', e); }
+        console.log('[init] renderer ready; shadowMapType=', renderer.shadowMap.type);
+      } catch(e){ console.warn('[init] renderer config error', e); }
     });
 
-    // Promociona materiales simples a MeshStandard (PBR)
-    function promoteToStandard(oldMat, renderer){
-      if (!oldMat) return null;
-      if (oldMat.isMeshStandardMaterial) return oldMat;
-      try {
-        const newMat = new THREE.MeshStandardMaterial();
-        ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap'].forEach(k=>{
-          if (oldMat[k]) newMat[k] = oldMat[k];
-        });
-        if (oldMat.color) newMat.color.copy(oldMat.color);
-        if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
-        newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : 1.0;
-        newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : 0.0;
-        newMat.side = THREE.DoubleSide;
-        newMat.needsUpdate = true;
-        return newMat;
-      } catch(e){ console.warn('[promote] failed', e); return null; }
-    }
+    // Centrar rig en bbox de techo/piso/paredes cuando estén cargados
+    const essentialIds = ['techo-entity','piso-entity','paredes-entity'];
+    const loaded = {};
+    essentialIds.forEach(id => loaded[id] = false);
 
-    // Asegura textura: POT, encoding, mipmaps (mejor calidad y menos ruido)
-    function ensureTextureGood(tex, key, renderer){
-      if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
-      const img = tex.image;
-      const w = img.width || img.naturalWidth || img.bitmapWidth || 0;
-      const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
-      const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
-      try { tex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding; } catch(e){}
-      if (!isPOT || Math.max(w,h) < TARGET_MIN_TEX) {
-        // try upscale to POT using canvas (best-effort; CORS may block)
-        try {
-          const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
-          const desired = Math.min(maxTex, Math.max(TARGET_MIN_TEX, Math.max(w,h)));
-          const target = nextPOT(desired);
-          const canvas = document.createElement('canvas');
-          canvas.width = target; canvas.height = target;
-          const ctx = canvas.getContext('2d');
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          const aspect = (w && h) ? (w/h) : 1;
-          let dw = target, dh = target;
-          if (aspect > 1) dh = Math.round(target / aspect); else dw = Math.round(target * aspect);
-          const ox = Math.round((target-dw)/2), oy = Math.round((target-dh)/2);
-          ctx.drawImage(img, ox, oy, dw, dh);
-          const newTex = new THREE.CanvasTexture(canvas);
-          newTex.generateMipmaps = true;
-          newTex.minFilter = THREE.LinearMipmapLinearFilter;
-          newTex.magFilter = THREE.LinearFilter;
-          try { newTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch(e){}
-          newTex.wrapS = newTex.wrapT = THREE.RepeatWrapping;
-          newTex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding;
-          newTex.needsUpdate = true;
-          return {ok:true, replaced:true, newTex};
-        } catch(e){
-          return {ok:false, reason:'canvas-resize-failed', err:e};
-        }
-      }
-      tex.generateMipmaps = true;
-      tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
-      tex.magFilter = tex.magFilter || THREE.LinearFilter;
-      try { tex.anisotropy = tex.anisotropy || (renderer.capabilities && renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
-      tex.needsUpdate = true;
-      return {ok:true, replaced:false, info:{w,h,isPOT}};
-    }
-
-    // Heurística para detectar piso (gran XZ y thiny Y)
-    function detectFloorCandidates(root){
-      const meshes = [];
-      root.traverse(node => { if (node.isMesh) meshes.push(node); });
-      if (!meshes.length) return [];
-      const byName = meshes.filter(m => m.name && /floor|piso|ground|suelo|tile/i.test(m.name));
-      if (byName.length) return byName;
-      const areaArr = meshes.map(m=>{
-        const bb = new THREE.Box3().setFromObject(m);
-        const s = new THREE.Vector3(); bb.getSize(s);
-        return {m, area: s.x * s.z, size:s};
-      }).sort((a,b)=>b.area-a.area);
-      return areaArr.slice(0,1).map(x=>x.m);
-    }
-
-    // Procesa cada modelo al cargar: normales, materiales, textures, alpha handling, sombras
-    function inspectAndFixModel(el){
-      const renderer = sceneEl.renderer;
-      if (!el) return;
-      el.addEventListener('model-loaded', (ev) => {
-        try {
-          const root = ev.detail.model.scene || ev.detail.model;
-          const fixes = [];
-          root.traverse(node => {
-            if (!node.isMesh) return;
-
-            // normals
-            if (node.geometry && !node.geometry.attributes.normal) {
-              node.geometry.computeVertexNormals();
-              fixes.push({type:'computedNormals', mesh: node.name || node.id});
-            }
-
-            // materials array guard
-            const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
-            mats.forEach((mat, idx) => {
-              if (!mat) return;
-
-              // Promote if necessary
-              if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
-                const promoted = promoteToStandard(mat, renderer);
-                if (promoted) {
-                  if (Array.isArray(node.material)) node.material[idx] = promoted;
-                  else node.material = promoted;
-                  mat = promoted;
-                  fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
-                }
-              }
-
-              // Texturas y encoding
-              ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap','alphaMap'].forEach(k => {
-                if (mat && mat[k]) {
-                  try {
-                    const res = ensureTextureGood(mat[k], k, renderer);
-                    if (res.ok && res.replaced && res.newTex) {
-                      mat[k] = res.newTex;
-                      mat.needsUpdate = true;
-                      fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
-                    } else if (!res.ok) {
-                      fixes.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: res.reason || ''});
-                    }
-                  } catch(e){ console.warn('[fix] texture key failed', e); }
-                }
-              });
-
-              // ALPHA handling (decals / stickers / transparent PNGs)
-              try {
-                const hasAlphaMap = !!mat.alphaMap;
-                const mapIsRGBA = !!(mat.map && mat.map.format === THREE.RGBAFormat);
-                // prefer blended transparency for smooth decals; use alphaTest for hard cutouts
-                if (hasAlphaMap || mapIsRGBA) {
-                  // If alphaMap exists, use alphaTest for crisp edges; else blended with depthWrite false
-                  if (hasAlphaMap) {
-                    mat.transparent = false;
-                    mat.alphaTest = mat.alphaTest || 0.5;
-                    mat.depthWrite = true;
-                  } else {
-                    mat.transparent = true;
-                    mat.alphaTest = mat.alphaTest || 0.01;
-                    mat.depthWrite = false;
-                  }
-                  mat.needsUpdate = true;
-                  fixes.push({type:'alphaFix', mesh: node.name || node.id, method: hasAlphaMap ? 'alphaTest' : 'blended'});
-                }
-              } catch(e){ /* ignore alpha heuristics failures */ }
-
-              // Shadow flags
-              node.castShadow = true;
-              node.receiveShadow = true;
-            }); // mats.forEach
-
-          }); // traverse
-
-          // Identify floors and explicitly mark receiveShadow = true; do not cast to avoid self-shadow acne
-          const floors = detectFloorCandidates(root);
-          floors.forEach(f => {
-            f.receiveShadow = true;
-            f.castShadow = false;
-            if (f.material) {
-              if (Array.isArray(f.material)) f.material.forEach(m=>{ if (m){ m.side = THREE.DoubleSide; m.needsUpdate = true; } });
-              else { f.material.side = THREE.DoubleSide; f.material.needsUpdate = true; }
-            }
-            fixes.push({type:'floorMarked', mesh: f.name || f.id});
-          });
-
-          console.log('[fix] issues found/fixed for', el.id, fixes.length? fixes : 'none');
-        } catch (e) {
-          console.warn('[fix] model inspect failed for', el.id, e);
-        }
+    function computeCenterAndPlaceRig() {
+      // recoger objetos ya cargados
+      const objs = [];
+      essentialIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const obj = el.getObject3D('mesh') || el.getObject3D('model') || el.getObject3D('gltf') || el.getObject3D('entity');
+        if (obj) objs.push(obj);
       });
 
-      // trigger manual if already loaded
-      const maybe = el.getObject3D('mesh') || el.getObject3D('model');
-      if (maybe) el.emit('model-loaded', { model: maybe }, false);
+      if (!objs.length) {
+        // fallback: no mover rig, deja el valor por defecto
+        console.warn('[center] no essential models ready yet; leaving rig at default');
+        return;
+      }
+
+      // expand bbox por cada objeto
+      const bbox = new THREE.Box3();
+      objs.forEach(o => {
+        try { bbox.expandByObject(o); } catch(e) { /* ignore */ }
+      });
+
+      if (bbox.isEmpty()) {
+        console.warn('[center] bbox empty');
+        return;
+      }
+
+      const center = new THREE.Vector3(); bbox.getCenter(center);
+      const size = new THREE.Vector3(); bbox.getSize(size);
+      const baseY = bbox.min.y;
+
+      // colocar rig en el centro y Y sobre el piso + altura de cámara
+      const rig = document.getElementById('rig');
+      rig.object3D.position.set(center.x, baseY + CAMERA_HEIGHT, center.z);
+
+      // ajustar shadow-receiver al piso
+      const plane = document.getElementById('shadow-receiver');
+      plane.setAttribute('position', `${center.x} ${baseY + 0.002} ${center.z}`);
+      plane.setAttribute('width', Math.max(0.1, size.x));
+      plane.setAttribute('height', Math.max(0.1, size.z));
+
+      // set bounds for movement-controls if present
+      const margin = RIG_MARGIN;
+      const bounds = { minX: bbox.min.x + margin, maxX: bbox.max.x - margin, minZ: bbox.min.z + margin, maxZ: bbox.max.z - margin, minY: baseY + CAMERA_HEIGHT, maxY: baseY + CAMERA_HEIGHT };
+      try {
+        const rigComp = rig.components && rig.components['movement-controls'];
+        if (rigComp && typeof rigComp.setBounds === 'function') rigComp.setBounds(bounds);
+      } catch(e){}
+      console.log('[center] rig positioned', rig.object3D.position, 'bounds', bounds);
     }
 
-    // Mejora parámetros de sombras del foco (spot)
-    function enhanceLampShadows(lampId){
-      const el = document.getElementById(lampId);
+    // Cada essential entity -> esperar model-loaded
+    essentialIds.forEach(id => {
+      const el = document.getElementById(id);
       if (!el) return;
-      setTimeout(()=>{
-        const light = el.getObject3D && el.getObject3D('light');
-        if (!light) return console.warn('Light object not found for', lampId);
+      el.addEventListener('model-loaded', () => {
+        loaded[id] = true;
+        computeCenterAndPlaceRig();
+      });
+      el.addEventListener('model-error', (ev) => {
+        console.warn('[model-error]', id, ev && ev.detail ? ev.detail.src : '');
+      });
+    });
+
+    // Si ya estaban cargados al arrancar
+    setTimeout(computeCenterAndPlaceRig, 300); // intento inicial rápido
+    setTimeout(computeCenterAndPlaceRig, 1500); // segundo intento cuando todo haya cargado
+
+    // Configurar sombra del foco greenLamp (mapSize seguro)
+    function tuneLamp() {
+      const lampEl = document.getElementById('greenLamp');
+      if (!lampEl) return;
+      const light = lampEl.getObject3D && lampEl.getObject3D('light');
+      if (!light) {
+        // reintentar un frame después (a veces la light se crea más tarde)
+        requestAnimationFrame(tuneLamp);
+        return;
+      }
+      try {
         light.castShadow = true;
-        const renderer = sceneEl.renderer;
-        const maxAllowed = renderer && renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
-        const chosen = Math.min(maxAllowed, DESIRED_SHADOW_SIZE);
-        if (light.shadow) {
-          // Spot uses a shadow camera (Perspective). Aumentar resolución ayuda a eliminar ruido.
-          light.shadow.mapSize.width = chosen;
-          light.shadow.mapSize.height = chosen;
-          light.shadow.bias = SHADOW_BIAS;
-          if ('normalBias' in light) light.normalBias = SHADOW_NORMAL_BIAS;
-          if ('radius' in light.shadow) light.shadow.radius = SHADOW_RADIUS;
-          // para SpotLight ajustamos near/far para optimizar calidad
-          try {
-            if (light.shadow.camera) {
-              light.shadow.camera.near = 0.1;
-              light.shadow.camera.far = Math.max(50, (light.distance || 50));
-              light.shadow.camera.updateProjectionMatrix && light.shadow.camera.updateProjectionMatrix();
-            }
-          } catch(e){}
+        const renderer = scene.renderer;
+        const maxAllowed = (renderer && renderer.capabilities && renderer.capabilities.maxTextureSize) || 2048;
+        const chosen = Math.min(maxAllowed, MAX_SAFE_SHADOW);
+        if (light.shadow && light.shadow.mapSize && typeof light.shadow.mapSize.set === 'function') {
+          light.shadow.mapSize.set(chosen, chosen);
         }
-        // ensure target at center (so the spot aims to center of scene)
+        if (light.shadow) {
+          light.shadow.bias = -0.0004;
+          if ('normalBias' in light) light.normalBias = 0.02;
+          if ('radius' in light.shadow) light.shadow.radius = 2.0;
+          if (light.shadow.camera && light.shadow.camera.updateProjectionMatrix) {
+            light.shadow.camera.near = 0.1;
+            light.shadow.camera.far = Math.max(50, (light.distance || 50));
+            light.shadow.camera.updateProjectionMatrix();
+          }
+        }
+        // aseguramos que el target exista y esté en el centro (para un spot)
         try {
           if (light.target && light.target.position) {
-            // poner target en 0,1,0 por defecto (ajusta si tu escena tiene otro centro)
-            light.target.position.set(0, 1.0, 0);
-            sceneEl.object3D.add(light.target);
+            // poner target al centro aproximado (0, 1, 0) - luego computeCenterAndPlaceRig actualizará si es necesario
+            light.target.position.set(0, 1, 0);
+            scene.object3D.add(light.target);
           }
-        } catch(e){}
-        console.log('[lamp] shadows tuned', lampId, 'mapSize=', chosen);
-      }, 200);
+        } catch(e) {}
+        console.log('[lamp] tuned, mapSize=', chosen);
+      } catch(e){ console.warn('[lamp] tune failed', e); }
     }
+    tuneLamp();
 
-    // Aplicar a todos los gltf-model nodes
-    const nodes = sceneEl.querySelectorAll('[gltf-model]');
-    nodes.forEach(n => inspectAndFixModel(n));
-
-    // Tune lamp shadows
-    enhanceLampShadows('greenLamp');
-
-    // Debug helpers
+    // DEBUG helpers
     window.__aframe_debug = {
-      toggleWireframe: function(state){
-        sceneEl.object3D.traverse(node=>{
-          if (node.isMesh && node.material){
-            const mats = Array.isArray(node.material)?node.material:[node.material];
-            mats.forEach(m=>{ if (m) { m.wireframe = (state===undefined) ? !m.wireframe : !!state; m.needsUpdate=true; }});
-          }
-        });
+      listMaterials: function(){
+        const out = [];
+        scene.object3D.traverse(n => { if (n.isMesh && n.material) out.push({mesh: n.name || n.id, material: n.material}); });
+        console.log(out);
+        return out;
       },
-      onlyAmbient: function(on){
-        sceneEl.object3D.traverse(node=>{ if (node.isLight && node.type!=='AmbientLight'){ node.visible = !on ? true : false; }});
-        console.log('[debug] onlyAmbient=', !!on);
-      },
-      listMaterials: function(){ const out=[]; sceneEl.object3D.traverse(n=>{ if (n.isMesh && n.material) out.push({mesh:n.name||n.id, material:n.material}); }); console.log(out); return out; }
+      reCenter: computeCenterAndPlaceRig,
+      reTuneLamp: tuneLamp
     };
 
-    // Utility to reapply shadow rules in runtime
-    window.__shadows_apply = function(){ nodes.forEach(n => inspectAndFixModel(n)); enhanceLampShadows('greenLamp'); console.log('[user] reapply done'); };
-
-    console.log('[system] shadow & material pipeline loaded — usa __aframe_debug.* y __shadows_apply() en la consola para debug');
+    console.log('[ready] scene helper installed (use __aframe_debug.* in console).');
   })();
   </script>
 </body>
