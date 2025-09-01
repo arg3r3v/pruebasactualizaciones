@@ -191,27 +191,72 @@
         if (!root) return;
         const fixes = [];
 
+        // detecta candidate(s) de floor/room (mayores áreas)
+        const floorCandidates = detectFloorCandidates(root);
+        const floorSet = new Set(floorCandidates);
+
         root.traverse(node => {
           if (!node.isMesh) return;
 
+          // si no tiene normales, calcula
           if (node.geometry && !node.geometry.attributes.normal) {
             node.geometry.computeVertexNormals();
             fixes.push({type:'computedNormals', mesh: node.name || node.id});
           }
 
-          const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
-          mats.forEach((mat, idx) => {
+          // MATERIALS: aseguramos trabajar sobre clones en caso de meshes "room"
+          // esto permite aplicar DoubleSide sin afectar a materiales compartidos
+          let nodeMaterials = Array.isArray(node.material) ? node.material.slice() : [node.material];
+
+          // si el nodo es un floorCandidate (o es muy grande) forzamos clonación de sus materiales
+          // para poder ajustar side/depthWrite/transparent sin afectar otras mallas
+          let treatAsRoom = floorSet.has(node);
+
+          // heurística alternativa: si el mesh es significativamente grande (volumen/area), marcarlo
+          if (!treatAsRoom) {
+            try {
+              const bb = new THREE.Box3().setFromObject(node);
+              const s = new THREE.Vector3(); bb.getSize(s);
+              const area = Math.abs(s.x * s.z);
+              if (area > 1.5) { // umbral heurístico — ajusta si tu escena usa otras unidades
+                treatAsRoom = true;
+              }
+            } catch(e){}
+          }
+
+          if (treatAsRoom) {
+            // clonamos materiales si están compartidos
+            nodeMaterials = nodeMaterials.map(mat => {
+              if (!mat) return mat;
+              try {
+                const cloned = mat.clone ? mat.clone() : Object.assign(Object.create(Object.getPrototypeOf(mat)), mat);
+                // reemplazamos en la malla (array o único)
+                return cloned;
+              } catch(e){
+                return mat;
+              }
+            });
+            // asignar de nuevo los materiales clonados
+            node.material = Array.isArray(node.material) ? nodeMaterials : nodeMaterials[0];
+            fixes.push({type:'clonedMatsForRoom', mesh: node.name || node.id});
+          }
+
+          // ahora tratamos cada material (promoción, texturas, flags)
+          nodeMaterials.forEach((mat, idx) => {
             if (!mat) return;
+
+            // Promocionar si material antiguo
             if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
               const promoted = promoteToStandard(mat);
               if (promoted) {
                 if (Array.isArray(node.material)) node.material[idx] = promoted;
                 else node.material = promoted;
-                fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
                 mat = promoted;
+                fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
               }
             }
 
+            // comprobar y arreglar mapas de texturas
             ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap','alphaMap'].forEach(k => {
               if (node.material && node.material[k]) {
                 const res = ensureTextureGood(node.material[k], k, renderer, node);
@@ -221,80 +266,65 @@
                   node.material.needsUpdate = true;
                   fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
                 } else if (!res.ok) {
-                  fixes.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: res.reason || ''});
+                  // si falta uv2 en ao/light map, quitamos el map para evitar manchas negras
+                  if (res.reason === 'missing-uv2') {
+                    node.material[k] = null;
+                    node.material.needsUpdate = true;
+                    fixes.push({type:'removedMapMissingUV2', mesh: node.name || node.id, key:k});
+                  } else {
+                    fixes.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: res.reason || ''});
+                  }
                 }
               }
             });
+
+            // flags seguros: si opacity ~1, desactivar transparent y asegurar depthWrite
+            try {
+              if (mat.opacity !== undefined && mat.opacity >= 0.999) {
+                if (mat.transparent) { mat.transparent = false; fixes.push({type:'transparentDisabled', mesh: node.name || node.id}); }
+                if (mat.depthWrite === false) { mat.depthWrite = true; fixes.push({type:'depthWriteEnabled', mesh: node.name || node.id}); }
+              } else {
+                // si hay transparencia real, poner alphaTest razonable
+                if (mat.transparent) {
+                  if (mat.alphaTest === undefined || mat.alphaTest > 0.05) {
+                    const old = mat.alphaTest || 0;
+                    mat.alphaTest = Math.min(0.05, old || 0.05);
+                    fixes.push({type:'alphaTestAdjusted', mesh: node.name || node.id, old, newVal: mat.alphaTest});
+                  }
+                }
+              }
+            } catch(e){}
+
+            // polygonOffset para evitar z-fighting/sombras flotadas, sin tocar side
+            try {
+              if (!mat.polygonOffset) {
+                mat.polygonOffset = true;
+                mat.polygonOffsetFactor = (mat.polygonOffsetFactor !== undefined) ? mat.polygonOffsetFactor : 1;
+                mat.polygonOffsetUnits = (mat.polygonOffsetUnits !== undefined) ? mat.polygonOffsetUnits : 4;
+                fixes.push({type:'polygonOffsetApplied', mesh: node.name || node.id});
+              }
+            } catch(e){}
+
+            // Si tratamos la malla como room forzamos cara doble en el material CLONADO (no tocamos materiales compartidos)
+            if (treatAsRoom) {
+              try {
+                mat.side = THREE.DoubleSide;
+                // si opacity es ~1, asegurarse depthWrite y transparent off
+                if (mat.opacity !== undefined && mat.opacity >= 0.999) {
+                  mat.transparent = false;
+                  mat.depthWrite = true;
+                }
+                mat.needsUpdate = true;
+                fixes.push({type:'roomMatDoubleSided', mesh: node.name || node.id});
+              } catch(e){}
+            }
           });
 
+          // sombras por defecto (a menos que userData diga lo contrario)
           if (!(node.userData && node.userData.noShadow)) {
             node.castShadow = true;
             node.receiveShadow = true;
           }
-        });
-
-        // --- NUEVA LÓGICA para marcar suelo en meshes que pueden contener techo/paredes ---
-        // Si el mesh detectado como "floor" es el mismo que contiene paredes/techo (mesh único),
-        // evitar forzar cambios que afecten a toda la malla (p. ej. side = DoubleSide).
-        // En su lugar:
-        //  - activar receiveShadow
-        //  - desactivar castShadow para ese mesh
-        //  - aplicar polygonOffset en sus materiales para evitar z-fighting/sombras flotadas
-        //  - garantizar depthWrite = true y que transparent = false si opacity === 1
-        const floors = detectFloorCandidates(root);
-        floors.forEach(f => {
-          // marca para recibir sombras sin hacer cambios destructivos
-          f.receiveShadow = true;
-          f.castShadow = false;
-
-          // Si la geometría tiene grupos (multi-material), intentar aplicar cambios solo al material
-          // correspondiente. Si la malla usa un material compartido ampliamente, aplicamos
-          // polygonOffset y aseguramos depthWrite para evitar desapariciones.
-          if (f.material) {
-            const materials = Array.isArray(f.material) ? f.material : [f.material];
-            materials.forEach(m => {
-              // No forzar DoubleSide si el material está compartido (no es seguro)
-              // En vez de eso, aplicar polygonOffset para que la sombra se proyecte correctamente
-              try {
-                // polygonOffset ayuda a evitar z-fighting sin alterar el side/renderOrder
-                m.polygonOffset = true;
-                // valores prudentes — puedes ajustar si aún hay z-fighting
-                m.polygonOffsetFactor = (m.polygonOffsetFactor !== undefined) ? m.polygonOffsetFactor : 1;
-                m.polygonOffsetUnits = (m.polygonOffsetUnits !== undefined) ? m.polygonOffsetUnits : 4;
-
-                // Aseguramos que la profundidad se escriba y que no esté en la cola de transparencias
-                if (m.opacity !== undefined && m.opacity >= 1) {
-                  m.transparent = false;
-                  m.depthWrite = true;
-                } else {
-                  // si tiene transparencia real, respétala pero cuida el alphaTest mínimo
-                  if (m.transparent && (m.alphaTest === undefined || m.alphaTest < 0.0001)) {
-                    m.alphaTest = m.alphaTest || 0.0001;
-                  }
-                }
-
-                // si el material tenía side undefined, no tocarlo; si realmente necesita DoubleSide
-                // (caso raro) solo aplicarlo si el material no es usado por otra malla:
-                // comprobamos si el material es referenciado más de una vez en la escena
-                let usageCount = 0;
-                sceneEl.object3D.traverse(n => { if (n.isMesh) {
-                  const mats = Array.isArray(n.material) ? n.material : [n.material];
-                  mats.forEach(mm => { if (mm === m) usageCount++; });
-                }});
-                if (usageCount === 1 && (m.side === undefined || m.side === THREE.FrontSide) && /* heurístico: material necesita doble cara? */ false) {
-                  // aquí no forzamos por defecto; dejo comentado para referencia
-                  // m.side = THREE.DoubleSide;
-                }
-
-                m.needsUpdate = true;
-              } catch(e){
-                console.warn('[fix] failed to adjust floor material safely', e);
-              }
-            });
-          }
-
-          // registro
-          fixes.push({type:'floorSafeMarked', mesh: f.name || f.id});
         });
 
         console.log('[fix] issues found/fixed for', el.id, fixes.length ? fixes : 'none');
@@ -338,10 +368,12 @@
     }, { once: true });
   }
 
+  // aplica a todos los gltf-model de la escena
   const nodes = sceneEl.querySelectorAll('[gltf-model]');
   nodes.forEach(n => inspectAndFixModel(n));
   enhanceLampShadows('greenLamp');
 
+  // debug helpers
   window.__aframe_debug = {
     toggleWireframe: function(state){
       sceneEl.object3D.traverse(node=>{
