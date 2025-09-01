@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Galería — techo/piso/paredes</title>
+  <title>Galería — Correcciones profundas sombras & alpha</title>
+
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <style>
     html,body{margin:0;height:100%;background:#000}
@@ -11,172 +12,348 @@
   </style>
 </head>
 <body>
-<a-scene id="scene" background="color:#000" embedded renderer="colorManagement:true">
-  <!-- ASSETS -->
-  <a-assets timeout="0">
-    <a-asset-item id="techo" src="models/techo.glb"></a-asset-item>
-    <a-asset-item id="piso" src="models/piso.glb"></a-asset-item>
-    <a-asset-item id="paredes" src="models/paredes.glb"></a-asset-item>
+  <a-scene id="scene"
+           background="color:#000"
+           embedded
+           renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true; logarithmicDepthBuffer:true"
+           shadow="type:pcfsoft; autoUpdate:true">
+    <a-assets timeout="0">
+      <!-- esenciales para centrar/medidas -->
+      <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
+      <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
+      <a-asset-item id="paredes" src="models/paredes.glb"></a-asset-item>
 
-    <a-asset-item id="assets1" src="models/assets1.glb"></a-asset-item>
-    <a-asset-item id="assets2" src="models/assets2.glb"></a-asset-item>
-    <a-asset-item id="assets3" src="models/assets3.glb"></a-asset-item>
-    <a-asset-item id="assets4" src="models/assets4.glb"></a-asset-item>
-    <a-asset-item id="assets5" src="models/assets5.glb"></a-asset-item>
-    <a-asset-item id="assets6" src="models/assets6.glb"></a-asset-item>
-  </a-assets>
+      <!-- props / assets -->
+      <a-asset-item id="assets1" src="models/assets1.glb"></a-asset-item>
+      <a-asset-item id="assets2" src="models/assets2.glb"></a-asset-item>
+      <a-asset-item id="assets3" src="models/assets3.glb"></a-asset-item>
+      <a-asset-item id="assets4" src="models/assets4.glb"></a-asset-item>
+      <a-asset-item id="assets5" src="models/assets5.glb"></a-asset-item>
+      <a-asset-item id="assets6" src="models/assets6.glb"></a-asset-item>
+    </a-assets>
 
-  <!-- LUZ -->
-  <a-entity id="greenLamp"
-            position="0 1 0"
-            light="type: point; color: #2bff7a; intensity: 1.6; distance: 12; decay: 2; castShadow: true">
-  </a-entity>
+    <!-- Muy tenue ambient para no perder la dominante verde -->
+    <a-entity light="type:ambient; color:#0b0b0b; intensity:0.08"></a-entity>
 
-  <!-- RIG + CÁMARA -->
-  <a-entity id="rig" position="1.5 1.6 1.5" smooth-walk>
-    <a-camera id="camera" position="0 0 0" look-controls="pointerLockEnabled:false; touchEnabled:true"></a-camera>
-  </a-entity>
+    <!-- Usamos SPOT para sombras más controladas (menos ruido que point cube) -->
+    <a-entity id="greenLamp" position="-6 2 4"
+              light="type:spot; color:#2bff7a; intensity:144; distance:30; angle:1.2; penumbra:0.6; decay:2; castShadow:true">
+    </a-entity>
 
-  <!-- ESCENA -->
-  <a-entity id="techo-entity"   gltf-model="#techo"   shadow="cast:true; receive:true"></a-entity>
-  <a-entity id="piso-entity"    gltf-model="#piso"    shadow="cast:true; receive:true"></a-entity>
-  <a-entity id="paredes-entity" gltf-model="#paredes" shadow="cast:true; receive:true"></a-entity>
+    <!-- RIG + cámara (pequeña y centrada; la Y real se recalculará desde bbox) -->
+    <a-entity id="rig" position="0 1.6 0" smooth-walk>
+      <a-entity camera id="camera" position="0 0 0" look-controls="pointerLockEnabled:false; touchEnabled:true"></a-entity>
+    </a-entity>
 
-  <a-entity id="asset1-entity" gltf-model="#assets1" shadow="cast:true; receive:true"></a-entity>
-  <a-entity id="asset2-entity" gltf-model="#assets2" shadow="cast:true; receive:true"></a-entity>
-  <a-entity id="asset3-entity" gltf-model="#assets3" shadow="cast:true; receive:true"></a-entity>
-  <a-entity id="asset4-entity" gltf-model="#assets4" shadow="cast:true; receive:true"></a-entity>
-  <a-entity id="asset5-entity" gltf-model="#assets5" shadow="cast:true; receive:true"></a-entity>
-  <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast:true; receive:true"></a-entity>
+    <!-- Escena: techo/piso/paredes y assets -->
+    <a-entity id="techo-entity"   gltf-model="#techo"   shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="piso-entity"    gltf-model="#piso"    shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="paredes-entity" gltf-model="#paredes" shadow="cast:true; receive:true"></a-entity>
 
-  <!-- PLANO INVISIBLE PARA SOMBRAS -->
-  <a-plane id="shadow-receiver"
-           rotation="-90 0 0"
-           position="1.5 0 1.5"
-           width="3" height="3"
-           material="color:#000; opacity:0; transparent:true"
-           shadow="receive:true"></a-plane>
-</a-scene>
+    <a-entity id="asset1-entity" gltf-model="#assets1" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset2-entity" gltf-model="#assets2" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset3-entity" gltf-model="#assets3" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset4-entity" gltf-model="#assets4" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset5-entity" gltf-model="#assets5" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast:true; receive:true"></a-entity>
 
-<script>
-/* ---------- COMPONENTE smooth-walk ---------- */
-AFRAME.registerComponent('smooth-walk',{
-  schema:{ speed:{default:0.06}, smoothing:{default:12}, maxStep:{default:0.03} },
-  init:function(){
-    this.vel=new THREE.Vector3();
-    this.target=new THREE.Vector3();
-    this.keys={f:0,b:0,l:0,r:0};
-    this.touchMove=false;
-    this.bounds=null;
-    this._kd=e=>{ if(e.code==='KeyW'||e.code==='ArrowUp')this.keys.f=1;
-                  if(e.code==='KeyS'||e.code==='ArrowDown')this.keys.b=1;
-                  if(e.code==='KeyA'||e.code==='ArrowLeft')this.keys.l=1;
-                  if(e.code==='KeyD'||e.code==='ArrowRight')this.keys.r=1; };
-    this._ku=e=>{ if(e.code==='KeyW'||e.code==='ArrowUp')this.keys.f=0;
-                  if(e.code==='KeyS'||e.code==='ArrowDown')this.keys.b=0;
-                  if(e.code==='KeyA'||e.code==='ArrowLeft')this.keys.l=0;
-                  if(e.code==='KeyD'||e.code==='ArrowRight')this.keys.r=0; };
-    window.addEventListener('keydown',this._kd);
-    window.addEventListener('keyup',this._ku);
-    this._ts=e=>{this.touchMove=(e.touches&&e.touches.length>1);};
-    this._tm=e=>{this.touchMove=(e.touches&&e.touches.length>1);};
-    this._te=e=>{this.touchMove=(e.touches&&e.touches.length>1);};
-    window.addEventListener('touchstart',this._ts,{passive:true});
-    window.addEventListener('touchmove',this._tm,{passive:true});
-    window.addEventListener('touchend',this._te,{passive:true});
-  },
-  tick:function(t,dt){
-    const delta=Math.min(dt/1000,0.05);
-    const camEl=this.el.querySelector('[camera]');
-    let yaw=0;
-    if(camEl&&camEl.object3D){
-      const q=camEl.object3D.quaternion;
-      const e=new THREE.Euler().setFromQuaternion(q,'YXZ');
-      yaw=e.y;
+    <!-- plano receptor opcional (se actualizará según bbox) -->
+    <a-plane id="shadow-receiver"
+             rotation="-90 0 0"
+             position="0 0 0"
+             width="1" height="1"
+             material="color:#000; opacity:0; transparent:true"
+             shadow="receive:true"></a-plane>
+
+  </a-scene>
+
+  <script>
+  // ============================================
+  // Pipeline robusto: renderer config, sombras, materials, alpha fixes
+  // ============================================
+  (function(){
+    const sceneEl = document.getElementById('scene');
+    if (!sceneEl) return;
+
+    // Recomendados (ajusta si quieres):
+    const TARGET_MIN_TEX = 1024;
+    const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 1.5);
+    const DESIRED_SHADOW_SIZE = 4096; // intentamos 4096 si la GPU lo admite
+    const SHADOW_BIAS = -0.0004;
+    const SHADOW_NORMAL_BIAS = 0.02;
+    const SHADOW_RADIUS = 2.5;
+
+    // Helpers
+    function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
+    function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
+    function preferSRGBForKey(key){
+      const col = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
+      return col.indexOf(key) !== -1;
     }
-    const yawQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,yaw,0));
-    const forward=new THREE.Vector3(0,0,-1).applyQuaternion(yawQ).setY(0).normalize();
-    const right=new THREE.Vector3().crossVectors(forward,new THREE.Vector3(0,1,0)).normalize();
-    const moveZ=(this.keys.f-this.keys.b)+(this.touchMove?1:0);
-    const moveX=(this.keys.r-this.keys.l);
-    this.target.set(0,0,0);
-    if(Math.abs(moveZ)>0||Math.abs(moveX)>0){
-      this.target.add(forward.clone().multiplyScalar(moveZ));
-      this.target.add(right.clone().multiplyScalar(moveX));
-      this.target.normalize().multiplyScalar(this.data.speed);
-    }
-    const alpha=1-Math.exp(-this.data.smoothing*delta);
-    this.vel.lerp(this.target,alpha);
-    const step=this.vel.clone().multiplyScalar(delta);
-    if(step.length()>this.data.maxStep)step.multiplyScalar(this.data.maxStep/step.length());
-    this.el.object3D.position.add(step);
-    if(this.bounds){
-      const p=this.el.object3D.position;
-      p.x=Math.min(Math.max(p.x,this.bounds.minX),this.bounds.maxX);
-      p.z=Math.min(Math.max(p.z,this.bounds.minZ),this.bounds.maxZ);
-      p.y=Math.min(Math.max(p.y,this.bounds.minY),this.bounds.maxY);
-      this.el.object3D.position.copy(p);
-    }
-  },
-  setBounds:function(b){this.bounds=b;}
-});
 
-/* ---------- CONFIG Y CENTRADO ---------- */
-(function(){
-  const sceneEl=document.getElementById('scene');
-  const rigEl=document.getElementById('rig');
-  const camEl=document.getElementById('camera');
-  const shadowPlane=document.getElementById('shadow-receiver');
-  const essentials=['techo-entity','piso-entity','paredes-entity'];
-  const loaded={};
-  essentials.forEach(id=>loaded[id]=null);
+    // Esperar renderer listo para setear parametros globales
+    sceneEl.addEventListener('render-target-loaded', ()=> {
+      try {
+        const renderer = sceneEl.renderer;
+        if (!renderer) return;
+        renderer.setPixelRatio(MAX_PIXELRATIO);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.physicallyCorrectLights = true;
+        renderer.shadowMap.enabled = true;
+        // preferir VSM si disponible (suaviza granulado), si no -> PCFSoft
+        if (THREE.VSMShadowMap) renderer.shadowMap.type = THREE.VSMShadowMap;
+        else renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        console.log('[scene] renderer configured: pixelRatio=', renderer.getPixelRatio(), 'shadowMap=', renderer.shadowMap.type);
+      } catch(e){ console.warn('[scene] renderer config failed', e); }
+    });
 
-  function sanitize(obj){
-    obj.traverse(n=>{
-      if(n.isMesh){
-        n.castShadow=true;
-        n.receiveShadow=true;
-        if(n.material){
-          n.material.transparent=true;
-          if(n.material.map) n.material.map.encoding=THREE.sRGBEncoding;
-          n.material.needsUpdate=true;
+    // Promociona materiales simples a MeshStandard (PBR)
+    function promoteToStandard(oldMat, renderer){
+      if (!oldMat) return null;
+      if (oldMat.isMeshStandardMaterial) return oldMat;
+      try {
+        const newMat = new THREE.MeshStandardMaterial();
+        ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap'].forEach(k=>{
+          if (oldMat[k]) newMat[k] = oldMat[k];
+        });
+        if (oldMat.color) newMat.color.copy(oldMat.color);
+        if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
+        newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : 1.0;
+        newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : 0.0;
+        newMat.side = THREE.DoubleSide;
+        newMat.needsUpdate = true;
+        return newMat;
+      } catch(e){ console.warn('[promote] failed', e); return null; }
+    }
+
+    // Asegura textura: POT, encoding, mipmaps (mejor calidad y menos ruido)
+    function ensureTextureGood(tex, key, renderer){
+      if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
+      const img = tex.image;
+      const w = img.width || img.naturalWidth || img.bitmapWidth || 0;
+      const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
+      const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
+      try { tex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding; } catch(e){}
+      if (!isPOT || Math.max(w,h) < TARGET_MIN_TEX) {
+        // try upscale to POT using canvas (best-effort; CORS may block)
+        try {
+          const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
+          const desired = Math.min(maxTex, Math.max(TARGET_MIN_TEX, Math.max(w,h)));
+          const target = nextPOT(desired);
+          const canvas = document.createElement('canvas');
+          canvas.width = target; canvas.height = target;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          const aspect = (w && h) ? (w/h) : 1;
+          let dw = target, dh = target;
+          if (aspect > 1) dh = Math.round(target / aspect); else dw = Math.round(target * aspect);
+          const ox = Math.round((target-dw)/2), oy = Math.round((target-dh)/2);
+          ctx.drawImage(img, ox, oy, dw, dh);
+          const newTex = new THREE.CanvasTexture(canvas);
+          newTex.generateMipmaps = true;
+          newTex.minFilter = THREE.LinearMipmapLinearFilter;
+          newTex.magFilter = THREE.LinearFilter;
+          try { newTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch(e){}
+          newTex.wrapS = newTex.wrapT = THREE.RepeatWrapping;
+          newTex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding;
+          newTex.needsUpdate = true;
+          return {ok:true, replaced:true, newTex};
+        } catch(e){
+          return {ok:false, reason:'canvas-resize-failed', err:e};
         }
       }
-    });
-  }
+      tex.generateMipmaps = true;
+      tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
+      tex.magFilter = tex.magFilter || THREE.LinearFilter;
+      try { tex.anisotropy = tex.anisotropy || (renderer.capabilities && renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
+      tex.needsUpdate = true;
+      return {ok:true, replaced:false, info:{w,h,isPOT}};
+    }
 
-  essentials.forEach(id=>{
-    const el=document.getElementById(id);
-    el.addEventListener('model-loaded',evt=>{
-      const obj=evt.detail.model.scene||evt.detail.model;
-      loaded[id]=obj;
-      sanitize(obj);
-      tryCenter();
-    });
-  });
+    // Heurística para detectar piso (gran XZ y thiny Y)
+    function detectFloorCandidates(root){
+      const meshes = [];
+      root.traverse(node => { if (node.isMesh) meshes.push(node); });
+      if (!meshes.length) return [];
+      const byName = meshes.filter(m => m.name && /floor|piso|ground|suelo|tile/i.test(m.name));
+      if (byName.length) return byName;
+      const areaArr = meshes.map(m=>{
+        const bb = new THREE.Box3().setFromObject(m);
+        const s = new THREE.Vector3(); bb.getSize(s);
+        return {m, area: s.x * s.z, size:s};
+      }).sort((a,b)=>b.area-a.area);
+      return areaArr.slice(0,1).map(x=>x.m);
+    }
 
-  function tryCenter(){
-    const objs=Object.values(loaded).filter(Boolean);
-    if(!objs.length) return;
-    const box=new THREE.Box3();
-    objs.forEach(o=>box.expandByObject(o));
-    if(box.isEmpty()) return;
-    const center=new THREE.Vector3();
-    box.getCenter(center);
-    const size=new THREE.Vector3();
-    box.getSize(size);
-    const baseY=box.min.y;
-    const rigY=baseY+1.6;
-    rigEl.object3D.position.set(center.x,rigY,center.z);
-    camEl.setAttribute('position','0 0 0');
-    shadowPlane.setAttribute('position',`${center.x} ${baseY+0.001} ${center.z}`);
-    shadowPlane.setAttribute('width',size.x);
-    shadowPlane.setAttribute('height',size.z);
-    const bounds={minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z,minY:rigY,maxY:rigY};
-    const comp=rigEl.components['smooth-walk'];
-    if(comp) comp.setBounds(bounds);
-  }
-})();
-</script>
+    // Procesa cada modelo al cargar: normales, materiales, textures, alpha handling, sombras
+    function inspectAndFixModel(el){
+      const renderer = sceneEl.renderer;
+      if (!el) return;
+      el.addEventListener('model-loaded', (ev) => {
+        try {
+          const root = ev.detail.model.scene || ev.detail.model;
+          const fixes = [];
+          root.traverse(node => {
+            if (!node.isMesh) return;
+
+            // normals
+            if (node.geometry && !node.geometry.attributes.normal) {
+              node.geometry.computeVertexNormals();
+              fixes.push({type:'computedNormals', mesh: node.name || node.id});
+            }
+
+            // materials array guard
+            const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
+            mats.forEach((mat, idx) => {
+              if (!mat) return;
+
+              // Promote if necessary
+              if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
+                const promoted = promoteToStandard(mat, renderer);
+                if (promoted) {
+                  if (Array.isArray(node.material)) node.material[idx] = promoted;
+                  else node.material = promoted;
+                  mat = promoted;
+                  fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
+                }
+              }
+
+              // Texturas y encoding
+              ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap','alphaMap'].forEach(k => {
+                if (mat && mat[k]) {
+                  try {
+                    const res = ensureTextureGood(mat[k], k, renderer);
+                    if (res.ok && res.replaced && res.newTex) {
+                      mat[k] = res.newTex;
+                      mat.needsUpdate = true;
+                      fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
+                    } else if (!res.ok) {
+                      fixes.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: res.reason || ''});
+                    }
+                  } catch(e){ console.warn('[fix] texture key failed', e); }
+                }
+              });
+
+              // ALPHA handling (decals / stickers / transparent PNGs)
+              try {
+                const hasAlphaMap = !!mat.alphaMap;
+                const mapIsRGBA = !!(mat.map && mat.map.format === THREE.RGBAFormat);
+                // prefer blended transparency for smooth decals; use alphaTest for hard cutouts
+                if (hasAlphaMap || mapIsRGBA) {
+                  // If alphaMap exists, use alphaTest for crisp edges; else blended with depthWrite false
+                  if (hasAlphaMap) {
+                    mat.transparent = false;
+                    mat.alphaTest = mat.alphaTest || 0.5;
+                    mat.depthWrite = true;
+                  } else {
+                    mat.transparent = true;
+                    mat.alphaTest = mat.alphaTest || 0.01;
+                    mat.depthWrite = false;
+                  }
+                  mat.needsUpdate = true;
+                  fixes.push({type:'alphaFix', mesh: node.name || node.id, method: hasAlphaMap ? 'alphaTest' : 'blended'});
+                }
+              } catch(e){ /* ignore alpha heuristics failures */ }
+
+              // Shadow flags
+              node.castShadow = true;
+              node.receiveShadow = true;
+            }); // mats.forEach
+
+          }); // traverse
+
+          // Identify floors and explicitly mark receiveShadow = true; do not cast to avoid self-shadow acne
+          const floors = detectFloorCandidates(root);
+          floors.forEach(f => {
+            f.receiveShadow = true;
+            f.castShadow = false;
+            if (f.material) {
+              if (Array.isArray(f.material)) f.material.forEach(m=>{ if (m){ m.side = THREE.DoubleSide; m.needsUpdate = true; } });
+              else { f.material.side = THREE.DoubleSide; f.material.needsUpdate = true; }
+            }
+            fixes.push({type:'floorMarked', mesh: f.name || f.id});
+          });
+
+          console.log('[fix] issues found/fixed for', el.id, fixes.length? fixes : 'none');
+        } catch (e) {
+          console.warn('[fix] model inspect failed for', el.id, e);
+        }
+      });
+
+      // trigger manual if already loaded
+      const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+      if (maybe) el.emit('model-loaded', { model: maybe }, false);
+    }
+
+    // Mejora parámetros de sombras del foco (spot)
+    function enhanceLampShadows(lampId){
+      const el = document.getElementById(lampId);
+      if (!el) return;
+      setTimeout(()=>{
+        const light = el.getObject3D && el.getObject3D('light');
+        if (!light) return console.warn('Light object not found for', lampId);
+        light.castShadow = true;
+        const renderer = sceneEl.renderer;
+        const maxAllowed = renderer && renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
+        const chosen = Math.min(maxAllowed, DESIRED_SHADOW_SIZE);
+        if (light.shadow) {
+          // Spot uses a shadow camera (Perspective). Aumentar resolución ayuda a eliminar ruido.
+          light.shadow.mapSize.width = chosen;
+          light.shadow.mapSize.height = chosen;
+          light.shadow.bias = SHADOW_BIAS;
+          if ('normalBias' in light) light.normalBias = SHADOW_NORMAL_BIAS;
+          if ('radius' in light.shadow) light.shadow.radius = SHADOW_RADIUS;
+          // para SpotLight ajustamos near/far para optimizar calidad
+          try {
+            if (light.shadow.camera) {
+              light.shadow.camera.near = 0.1;
+              light.shadow.camera.far = Math.max(50, (light.distance || 50));
+              light.shadow.camera.updateProjectionMatrix && light.shadow.camera.updateProjectionMatrix();
+            }
+          } catch(e){}
+        }
+        // ensure target at center (so the spot aims to center of scene)
+        try {
+          if (light.target && light.target.position) {
+            // poner target en 0,1,0 por defecto (ajusta si tu escena tiene otro centro)
+            light.target.position.set(0, 1.0, 0);
+            sceneEl.object3D.add(light.target);
+          }
+        } catch(e){}
+        console.log('[lamp] shadows tuned', lampId, 'mapSize=', chosen);
+      }, 200);
+    }
+
+    // Aplicar a todos los gltf-model nodes
+    const nodes = sceneEl.querySelectorAll('[gltf-model]');
+    nodes.forEach(n => inspectAndFixModel(n));
+
+    // Tune lamp shadows
+    enhanceLampShadows('greenLamp');
+
+    // Debug helpers
+    window.__aframe_debug = {
+      toggleWireframe: function(state){
+        sceneEl.object3D.traverse(node=>{
+          if (node.isMesh && node.material){
+            const mats = Array.isArray(node.material)?node.material:[node.material];
+            mats.forEach(m=>{ if (m) { m.wireframe = (state===undefined) ? !m.wireframe : !!state; m.needsUpdate=true; }});
+          }
+        });
+      },
+      onlyAmbient: function(on){
+        sceneEl.object3D.traverse(node=>{ if (node.isLight && node.type!=='AmbientLight'){ node.visible = !on ? true : false; }});
+        console.log('[debug] onlyAmbient=', !!on);
+      },
+      listMaterials: function(){ const out=[]; sceneEl.object3D.traverse(n=>{ if (n.isMesh && n.material) out.push({mesh:n.name||n.id, material:n.material}); }); console.log(out); return out; }
+    };
+
+    // Utility to reapply shadow rules in runtime
+    window.__shadows_apply = function(){ nodes.forEach(n => inspectAndFixModel(n)); enhanceLampShadows('greenLamp'); console.log('[user] reapply done'); };
+
+    console.log('[system] shadow & material pipeline loaded — usa __aframe_debug.* y __shadows_apply() en la consola para debug');
+  })();
+  </script>
 </body>
 </html>
