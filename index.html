@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>A-Frame escena (v1.6.0) - Cámara centrada y sombras mejoradas</title>
+  <title>A-Frame escena (v1.6.0) - Cámara centrada y sombras (corregido)</title>
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <style>
     html, body { margin: 0; height: 100%; background: #000; }
@@ -11,9 +11,9 @@
   </style>
 </head>
 <body>
-  <a-scene background="color: #000" renderer="colorManagement: true" embedded>
+  <a-scene id="scene" background="color: #000" renderer="colorManagement: true" embedded>
 
-    <!-- Assets -->
+    <!-- Assets (rutas EXACTAS solicitadas) -->
     <a-assets timeout="0">
       <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
       <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
@@ -28,18 +28,19 @@
       <a-asset-item id="assets7" src="models/assets7.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Luz puntual verde -->
+    <!-- Luz puntual verde en el centro (NO mover): -->
     <a-entity id="greenLamp"
               position="0 1 0"
               light="type: point; color: #2bff7a; intensity: 1.6; distance: 12; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- Cámara centrada en el cuarto (1.5,1.6,1.5) -->
+    <!-- Rig + Cámara (inicial fallback centered at 1.5,1.6,1.5,
+         pero script calcula el centro real del cuarto y lo ajusta) -->
     <a-entity id="rig" position="1.5 1.6 1.5" wasd-controls="acceleration: 30">
-      <a-camera look-controls="pointerLockEnabled: false; touchEnabled: true"></a-camera>
+      <a-camera id="camera" position="0 0 0" look-controls="pointerLockEnabled: false; touchEnabled: true"></a-camera>
     </a-entity>
 
-    <!-- Modelos GLB -->
+    <!-- Modelos GLB (cada uno en su propia entidad, sin tocar transformaciones internas) -->
     <a-entity id="techo-entity"    gltf-model="#techo"    shadow="cast: true; receive: true"></a-entity>
     <a-entity id="piso-entity"     gltf-model="#piso"     shadow="cast: true; receive: true"></a-entity>
     <a-entity id="paredes-entity"  gltf-model="#paredes"  shadow="cast: true; receive: true"></a-entity>
@@ -52,57 +53,243 @@
     <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast: true; receive: true"></a-entity>
     <a-entity id="asset7-entity" gltf-model="#assets7" shadow="cast: true; receive: true"></a-entity>
 
+    <!-- Plano receptor de sombras (invisible pero recibe sombras). Se ajustará automáticamente al tamaño del cuarto. -->
+    <a-plane id="shadow-receiver"
+             rotation="-90 0 0"
+             position="1.5 0 1.5"
+             width="3" height="3"
+             material="color:#000; opacity:0; transparent:true">
+    </a-plane>
+
     <script>
       (function () {
-        const scene = document.querySelector('a-scene');
+        const sceneEl = document.getElementById('scene');
+        const rigEl = document.getElementById('rig');
+        const cameraEl = document.getElementById('camera');
+        const shadowReceiverEl = document.getElementById('shadow-receiver');
 
+        // IDs de los modelos que definen el "cuarto"
+        const mainIds = ['paredes-entity', 'piso-entity', 'techo-entity'];
+
+        // Conteo de modelos principales cargados y almacenamiento de sus objetos 3D
+        const loaded = {};
+        let loadedCount = 0;
+
+        // Detectar móvil (usado para elegir mapSize razonable)
         function isMobile() {
-          return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
-                 || 'ontouchstart' in window
-                 || navigator.maxTouchPoints > 0;
+          try {
+            return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+                   || 'ontouchstart' in window
+                   || navigator.maxTouchPoints > 0;
+          } catch (e) { return false; }
         }
 
-        scene.addEventListener('render-target-loaded', function () {
-          const renderer = scene.renderer;
-          if (!renderer) return;
+        // Helper: obtiene el objeto THREE.Object3D correcto desde model-loaded event o desde el elemento A-Frame
+        function extractObjectFromEvent(el, evt) {
+          // evt.detail.model suele contener la escena THREE.Object3D o un gltf con .scene
+          if (evt && evt.detail && evt.detail.model) {
+            const m = evt.detail.model;
+            return m.scene || m; // glTF loader puede entregar {scene:...} o el object directo
+          }
+          // fallback: intentar obtener el object3D del elemento
+          return el.getObject3D('mesh') || el.getObject3D('gltf') || el.getObject3D('object3D') || el.object3D;
+        }
 
-          renderer.shadowMap.enabled = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.outputEncoding = THREE.sRGBEncoding;
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        // Cuando todos los modelos principales estén listos, calcula bounding box combinado y centra la cámara (rig)
+        function tryCenterCamera() {
+          const objs = Object.values(loaded).filter(Boolean);
+          if (objs.length < mainIds.length) return; // aún no todos cargados
 
-          const greenLamp = document.getElementById('greenLamp').getObject3D('light');
-          if (greenLamp && greenLamp.shadow) {
-            greenLamp.castShadow = true;
-            const size = isMobile() ? 2048 : 4096;
-            greenLamp.shadow.mapSize.set(size, size);
-            greenLamp.shadow.bias = -0.0003;
-            greenLamp.shadow.radius = 6; // suavizado extra
-            greenLamp.shadow.needsUpdate = true;
+          // Calcular caja envolvente combinada
+          const box = new THREE.Box3();
+          objs.forEach(obj => {
+            // Es posible que el objeto no esté en la escena aún; asegúrate de que exista
+            try {
+              box.expandByObject(obj);
+            } catch (e) {
+              console.warn('expandByObject fallo para uno de los modelos', e);
+            }
+          });
+
+          if (box.isEmpty()) {
+            // fallback a ubicación predeterminada (1.5, 1.6, 1.5) si algo falla
+            rigEl.setAttribute('position', { x: 1.5, y: 1.6, z: 1.5 });
+            return;
           }
 
-          // Forzar cast/receive shadows en modelos GLTF
-          const ents = [
-            'techo-entity','piso-entity','paredes-entity',
-            'asset1-entity','asset2-entity','asset3-entity',
-            'asset4-entity','asset5-entity','asset6-entity','asset7-entity'
-          ];
-          ents.forEach(id => {
-            const el = document.getElementById(id);
-            el.addEventListener('model-loaded', e => {
-              e.detail.model.traverse(node => {
-                if (node.isMesh) {
-                  node.castShadow = true;
-                  node.receiveShadow = true;
-                  if (node.material && node.material.map) {
+          const center = new THREE.Vector3();
+          box.getCenter(center); // centro geométrico del volumen combinado
+
+          // Colocar rig exactamente en el centro horizontal y a 1.6m sobre la base del cuarto
+          const baseY = box.min.y; // normalmente el piso
+          const cameraHeight = 1.6;
+          const rigPos = { x: center.x, y: baseY + cameraHeight, z: center.z };
+
+          // Aplicar posición al rig (usando setAttribute para sincronizar con A-Frame)
+          rigEl.setAttribute('position', `${rigPos.x} ${rigPos.y} ${rigPos.z}`);
+
+          // Ajustar el plano receptor de sombras para cubrir el piso del cuarto
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const planeWidth = Math.max(0.01, size.x);
+          const planeHeight = Math.max(0.01, size.z);
+          // Establecer la posición y tamaño del receptor de sombras
+          shadowReceiverEl.setAttribute('position', `${center.x} ${baseY + 0.001} ${center.z}`);
+          shadowReceiverEl.setAttribute('width', planeWidth);
+          shadowReceiverEl.setAttribute('height', planeHeight);
+
+          // Asegurarnos de que la cámara quede en 0,0,0 relativa al rig
+          cameraEl.setAttribute('position', '0 0 0');
+
+          // console para debug
+          console.log('Rig centrado en:', rigPos, 'bbox:', box, 'plane size:', planeWidth, planeHeight);
+        }
+
+        // Añadir listeners para los 3 modelos principales
+        mainIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) {
+            console.warn('Elemento faltante:', id);
+            loaded[id] = null;
+            loadedCount++;
+            return;
+          }
+          el.addEventListener('model-loaded', function (evt) {
+            // Extraer el objeto 3D
+            const obj = extractObjectFromEvent(el, evt);
+            if (obj) {
+              loaded[id] = obj;
+            } else {
+              loaded[id] = null;
+            }
+            loadedCount++;
+            tryCenterCamera();
+          }, { once: true });
+        });
+
+        // Escuchar cualquier model-loaded para los demás assets y forzar cast/receive en sus meshes
+        const allAssetIds = [
+          'techo-entity','piso-entity','paredes-entity',
+          'asset1-entity','asset2-entity','asset3-entity','asset4-entity','asset5-entity','asset6-entity','asset7-entity'
+        ];
+
+        allAssetIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.addEventListener('model-loaded', function (evt) {
+            // Obtener el objeto real
+            const obj = extractObjectFromEvent(el, evt);
+            if (!obj) return;
+            // Recorrer y activar sombras en las mallas
+            obj.traverse(node => {
+              if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = true;
+                // Si existe textura, asegurar encoding sRGB
+                if (node.material && node.material.map) {
+                  try {
                     node.material.map.encoding = THREE.sRGBEncoding;
                     node.material.needsUpdate = true;
-                  }
+                  } catch (e) { /* no crítico */ }
                 }
-              });
+              }
             });
           });
         });
+
+        // Configuración del renderer y la luz puntual (greenLamp) al cargar el render target
+        sceneEl.addEventListener('render-target-loaded', function () {
+          const renderer = sceneEl.renderer;
+          if (!renderer) {
+            console.warn('Renderer no disponible');
+            return;
+          }
+
+          // Configuración básica de sombras y color management
+          renderer.shadowMap.enabled = true;
+          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          renderer.outputEncoding = THREE.sRGBEncoding;
+
+          // Pixel ratio moderado para estabilidad (evita jitter/ruido extremo en móviles)
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+
+          // Configurar la luz puntual (greenLamp) — NO mover la luz (posición y parámetros básicos ya definidos en HTML)
+          const greenLampEl = document.getElementById('greenLamp');
+          const lightObj = greenLampEl && greenLampEl.getObject3D ? greenLampEl.getObject3D('light') : null;
+
+          if (lightObj) {
+            // Forzar que pueda castear sombras
+            lightObj.castShadow = true;
+
+            // Elegir tamaño de mapa de sombras razonable — muchos dispositivos no admiten >2048 de forma fiable.
+            // Para reducir "grano" ajustamos mapSize, radius y bias en valores estables.
+            const mobile = isMobile();
+            // Deseado alto, pero clamped a 2048 para compatibilidad. Si el dispositivo soporta más, Three/driver lo manejará.
+            const desiredDesktop = 4096; // intención original alta
+            const desiredMobile = 2048;
+            const clampMax = 2048; // clamping para compatibilidad en GPUs comunes
+            const chosen = Math.min(mobile ? desiredMobile : desiredDesktop, clampMax);
+
+            try {
+              if (lightObj.shadow && lightObj.shadow.mapSize && typeof lightObj.shadow.mapSize.set === 'function') {
+                lightObj.shadow.mapSize.set(chosen, chosen);
+              }
+              // Ajustes que ayudan a suavizar y reducir artefactos:
+              // - radius mayor suaviza la PCF resultando en sombras menos "gruesas" pero más suaves
+              // - bias evita acne; value needs tuning depending on model scale
+              if (typeof lightObj.shadow.radius !== 'undefined') {
+                lightObj.shadow.radius = 6;
+              }
+              if (typeof lightObj.shadow.bias !== 'undefined') {
+                lightObj.shadow.bias = -0.0005;
+              }
+              // Ajustar near/far del shadow camera (si existe) al tamaño de la escena para mejor precision
+              if (lightObj.shadow.camera) {
+                try {
+                  lightObj.shadow.camera.near = 0.1;
+                  lightObj.shadow.camera.far = Math.max(50, lightObj.distance || 50);
+                  if (lightObj.shadow.camera.updateProjectionMatrix) {
+                    lightObj.shadow.camera.updateProjectionMatrix();
+                  }
+                } catch (e) { /* no crítico */ }
+              }
+              // Marcar necesidad de actualizar shadow
+              if (lightObj.shadow) lightObj.shadow.needsUpdate = true;
+            } catch (err) {
+              console.warn('Error configurando shadow en greenLamp:', err);
+            }
+          } else {
+            console.warn('No se encontró lightObj para greenLamp');
+          }
+
+          // Asegurar que el receptor de sombras realmente reciba sombras (plane)
+          const planeObj = shadowReceiverEl.getObject3D('mesh') || shadowReceiverEl.object3D;
+          if (planeObj) {
+            planeObj.traverse(node => {
+              if (node.isMesh) {
+                node.receiveShadow = true;
+                node.castShadow = false;
+                // Mantener el plano invisible pero receptivo
+                if (node.material) {
+                  node.material.transparent = true;
+                  node.material.opacity = 0;
+                  node.material.needsUpdate = true;
+                }
+              }
+            });
+          }
+
+          // Mensaje de debug
+          console.log('Renderer configurado. shadowMap.enabled=', renderer.shadowMap.enabled,
+                      ' type=', renderer.shadowMap.type,
+                      ' pixelRatio=', renderer.getPixelRatio ? renderer.getPixelRatio() : (window.devicePixelRatio || 1));
+        });
+
+        // Safety: si por alguna razón los modelos nunca disparan model-loaded (timeout), forzar un centro fallback a 1.5,1.6,1.5 tras 6s
+        setTimeout(() => {
+          tryCenterCamera();
+        }, 6000);
+
       })();
     </script>
 
