@@ -3,281 +3,105 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>A-Frame v1.6.0 — Correcciones robustas</title>
+  <title>Escena A-Frame Corregida</title>
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <style>html,body{margin:0;height:100%;background:#000}a-scene{width:100%;height:100vh;display:block}</style>
+  <style>
+    html, body { margin:0; height:100%; background:#000; }
+    a-scene { width:100%; height:100vh; display:block; }
+  </style>
 </head>
 <body>
-  <a-scene id="scene" background="color:#000" embedded renderer="colorManagement: true">
+  <a-scene id="scene" background="color:#000" renderer="colorManagement:true; physicallyCorrectLights:true; shadowMap.enabled:true; shadowMap.type:pcfsoft">
 
-    <!-- ASSETS (verifica rutas en tu servidor si recibes 404) -->
+    <!-- ASSETS -->
     <a-assets timeout="0">
-      <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
-      <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
-      <a-asset-item id="paredes" src="models/paredes.glb"></a-asset-item>
-
-      <!-- Atención: si tu servidor devuelve 404 para asset1s.glb, corrige el nombre en tu servidor
-           o cámbialo aquí a la ruta correcta. -->
-      <a-asset-item id="assets1" src="models/asset1s.glb"></a-asset-item>
-      <a-asset-item id="assets2" src="models/assets2.glb"></a-asset-item>
-      <a-asset-item id="assets3" src="models/assets3.glb"></a-asset-item>
-      <a-asset-item id="assets4" src="models/assets4.glb"></a-asset-item>
-      <a-asset-item id="assets5" src="models/assets5.glb"></a-asset-item>
-      <a-asset-item id="assets6" src="models/assets6.glb"></a-asset-item>
-      <a-asset-item id="assets7" src="models/assets7.glb"></a-asset-item>
+      <a-asset-item id="techo"    src="models/techo.glb"></a-asset-item>
+      <a-asset-item id="piso"     src="models/piso.glb"></a-asset-item>
+      <a-asset-item id="paredes"  src="models/paredes.glb"></a-asset-item>
+      <a-asset-item id="assets1"  src="models/assets1.glb"></a-asset-item>
+      <a-asset-item id="assets2"  src="models/assets2.glb"></a-asset-item>
+      <a-asset-item id="assets3"  src="models/assets3.glb"></a-asset-item>
+      <a-asset-item id="assets4"  src="models/assets4.glb"></a-asset-item>
+      <a-asset-item id="assets5"  src="models/assets5.glb"></a-asset-item>
+      <a-asset-item id="assets6"  src="models/assets6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- LUZ (mantengo posición/atributos básicos tal como pediste) -->
+    <!-- LUZ VERDE (tu lámpara) -->
     <a-entity id="greenLamp"
-              position="0 1 0"
-              light="type: point; color: #2bff7a; intensity: 1.6; distance: 12; decay: 2; castShadow: true">
+              position="-6 2 4"
+              light="type: point; color: #2bff7a; intensity: 1.6; distance: 15; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- RIG + CÁMARA (posición recalculada desde bbox de techo/piso/paredes) -->
-    <a-entity id="rig" position="1.5 1.6 1.5" smooth-walk>
-      <a-camera id="camera" position="0 0 0" look-controls="pointerLockEnabled: false; touchEnabled: true"></a-camera>
+    <!-- RIG + CÁMARA -->
+    <a-entity id="rig" position="0 2.4 5" smooth-walk>
+      <a-camera id="camera" position="0 0 0"
+                look-controls="pointerLockEnabled:false; touchEnabled:true">
+      </a-camera>
     </a-entity>
 
-    <!-- ENTIDADES GLB -->
-    <a-entity id="techo-entity" gltf-model="#techo" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="piso-entity"  gltf-model="#piso"  shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="paredes-entity" gltf-model="#paredes" shadow="cast: true; receive: true"></a-entity>
+    <!-- ESCENA -->
+    <a-entity id="techo-entity"   gltf-model="#techo"   shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="piso-entity"    gltf-model="#piso"    shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="paredes-entity" gltf-model="#paredes" shadow="cast:true; receive:true"></a-entity>
 
-    <a-entity id="asset1-entity" gltf-model="#assets1" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="asset2-entity" gltf-model="#assets2" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="asset3-entity" gltf-model="#assets3" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="asset4-entity" gltf-model="#assets4" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="asset5-entity" gltf-model="#assets5" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="asset7-entity" gltf-model="#assets7" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="asset1-entity" gltf-model="#assets1" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset2-entity" gltf-model="#assets2" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset3-entity" gltf-model="#assets3" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset4-entity" gltf-model="#assets4" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset5-entity" gltf-model="#assets5" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast:true; receive:true"></a-entity>
 
-    <!-- Plano receptor de sombras (invisible) -->
-    <a-plane id="shadow-receiver" rotation="-90 0 0" position="1.5 0 1.5" width="3" height="3"
-             material="color:#000; opacity:0; transparent:true"></a-plane>
+    <!-- PLANO INVISIBLE PARA SOMBRAS -->
+    <a-plane id="shadow-plane" rotation="-90 0 0"
+             width="50" height="50"
+             material="color:#000; opacity:0; transparent:true"
+             shadow="receive:true">
+    </a-plane>
 
-    <script>
-    /* ---------- COMPONENT: smooth-walk (touch MOVIMIENTO requiere 2 dedos) ---------- */
-    AFRAME.registerComponent('smooth-walk', {
-      schema: { speed: { default: 0.06 }, smoothing: { default: 12.0 }, maxStep: { default: 0.03 } },
-      init: function(){
-        this.vel = new THREE.Vector3();
-        this.target = new THREE.Vector3();
-        this.keys = { f:0,b:0,l:0,r:0 };
-        this.touchMove = false; // ahora requiere multitouch
-        this.bounds = null;
-        // teclado
-        this._kd = (e)=>{ if(e.code==='KeyW'||e.code==='ArrowUp') this.keys.f=1; if(e.code==='KeyS'||e.code==='ArrowDown') this.keys.b=1; if(e.code==='KeyA'||e.code==='ArrowLeft') this.keys.l=1; if(e.code==='KeyD'||e.code==='ArrowRight') this.keys.r=1; };
-        this._ku = (e)=>{ if(e.code==='KeyW'||e.code==='ArrowUp') this.keys.f=0; if(e.code==='KeyS'||e.code==='ArrowDown') this.keys.b=0; if(e.code==='KeyA'||e.code==='ArrowLeft') this.keys.l=0; if(e.code==='KeyD'||e.code==='ArrowRight') this.keys.r=0; };
-        window.addEventListener('keydown', this._kd); window.addEventListener('keyup', this._ku);
-        // touch handlers: solo mover si hay >=2 dedos -> no interfiere con look-controls de 1 dedo
-        this._ts = (e)=>{ this.touchMove = (e.touches && e.touches.length>1); };
-        this._tm = (e)=>{ this.touchMove = (e.touches && e.touches.length>1); };
-        this._te = (e)=>{ this.touchMove = (e.touches && e.touches.length>1); };
-        window.addEventListener('touchstart', this._ts, {passive:true});
-        window.addEventListener('touchmove', this._tm, {passive:true});
-        window.addEventListener('touchend', this._te, {passive:true});
-        this.el.object3D.scale.set(1,1,1);
-      },
-      remove: function(){
-        window.removeEventListener('keydown', this._kd);
-        window.removeEventListener('keyup', this._ku);
-        window.removeEventListener('touchstart', this._ts);
-        window.removeEventListener('touchmove', this._tm);
-        window.removeEventListener('touchend', this._te);
-      },
-      tick: function(t, dt){
-        const delta = Math.min(dt/1000, 0.05);
-        const camEl = this.el.querySelector('[camera]');
-        let yaw=0;
-        if (camEl && camEl.object3D){
-          const q = camEl.object3D.quaternion;
-          const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
-          yaw = e.y;
-        } else {
-          yaw = this.el.object3D.rotation.y;
-        }
-        const yawQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0,yaw,0));
-        const forward = new THREE.Vector3(0,0,-1).applyQuaternion(yawQ).setY(0).normalize();
-        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
-        const moveZ = (this.keys.f - this.keys.b) + (this.touchMove ? 1 : 0);
-        const moveX = (this.keys.r - this.keys.l);
-        this.target.set(0,0,0);
-        if (Math.abs(moveZ)>0 || Math.abs(moveX)>0){
-          this.target.add(forward.clone().multiplyScalar(moveZ));
-          this.target.add(right.clone().multiplyScalar(moveX));
-          this.target.normalize().multiplyScalar(this.data.speed);
-        }
-        const alpha = 1 - Math.exp(-this.data.smoothing * delta);
-        this.vel.lerp(this.target, alpha);
-        const step = this.vel.clone().multiplyScalar(delta);
-        const len = step.length();
-        if (len > this.data.maxStep) step.multiplyScalar(this.data.maxStep / len);
-        this.el.object3D.position.add(step);
-        if (this.bounds){
-          const p = this.el.object3D.position;
-          p.x = Math.min(Math.max(p.x, this.bounds.minX), this.bounds.maxX);
-          p.z = Math.min(Math.max(p.z, this.bounds.minZ), this.bounds.maxZ);
-          p.y = Math.min(Math.max(p.y, this.bounds.minY), this.bounds.maxY);
-          this.el.object3D.position.copy(p);
-        }
-      },
-      setBounds: function(b){ this.bounds = b; }
-    });
-
-    /* ---------- UTILS: esperar renderer y luego configurar ---------- */
-    (function(){
-      const sceneEl = document.getElementById('scene');
-      const rigEl = document.getElementById('rig');
-      const camEl = document.getElementById('camera');
-      const shadowPlane = document.getElementById('shadow-receiver');
-      const mainIds = ['paredes-entity','piso-entity','techo-entity'];
-      const loaded = {}; mainIds.forEach(id=>loaded[id]=null);
-
-      function isMobile(){
-        try { return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || navigator.maxTouchPoints>0; } catch(e){ return false; }
-      }
-
-      function detectRendererReady(cb){
-        // wait until sceneEl.renderer exists, then callback
-        (function waitRAF(){
-          if (sceneEl.renderer) return cb(sceneEl.renderer);
-          requestAnimationFrame(waitRAF);
-        })();
-      }
-
-      // sanitize materials + enable shadows
-      function sanitizeAndEnableShadows(obj){
-        obj.traverse(node=>{
-          if (node.isMesh){
-            node.castShadow = true; node.receiveShadow = true;
-            const mat = node.material;
-            if (mat){
-              let changed=false;
-              try {
-                if (mat.normalMap){ mat.normalMap = null; changed=true; }
-                if (mat.normalScale){ mat.normalScale = new THREE.Vector2(0,0); changed=true; }
-                if (mat.roughnessMap){ mat.roughnessMap = null; changed=true; }
-                if (typeof mat.metalness !== 'undefined'){ mat.metalness = 0; changed=true; }
-                if (typeof mat.roughness !== 'undefined'){ mat.roughness = Math.max(0.75, mat.roughness||0.75); changed=true; }
-                if (mat.map && mat.map.encoding !== THREE.sRGBEncoding){ mat.map.encoding = THREE.sRGBEncoding; changed=true; }
-                if (changed) mat.needsUpdate = true;
-              } catch(e){ console.warn('sanitize material failed', e); }
-            }
-          }
-        });
-      }
-
-      // eventos model-loaded y model-error para todos los assets -> mensajes más claros
-      const allAssetIds = [
-        'techo-entity','piso-entity','paredes-entity',
-        'asset1-entity','asset2-entity','asset3-entity','asset4-entity','asset5-entity','asset6-entity','asset7-entity'
-      ];
-      allAssetIds.forEach(id=>{
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener('model-loaded', function(evt){
-          const obj = (evt && evt.detail && evt.detail.model) ? (evt.detail.model.scene || evt.detail.model) : el.getObject3D('gltf') || el.getObject3D('mesh') || el.object3D;
-          if (obj) sanitizeAndEnableShadows(obj);
-        });
-        el.addEventListener('model-error', function(e){
-          console.warn('Model error loading', id, e && e.detail ? e.detail.src : '');
-        });
-      });
-
-      // modelos esenciales para calcular bounding box
-      mainIds.forEach(id=>{
-        const el = document.getElementById(id);
-        if (!el){ loaded[id]=null; return; }
-        el.addEventListener('model-loaded', function(evt){
-          const obj = (evt && evt.detail && evt.detail.model) ? (evt.detail.model.scene || evt.detail.model) : el.getObject3D('gltf') || el.getObject3D('mesh') || el.object3D;
-          loaded[id] = obj || null;
-          if (obj) sanitizeAndEnableShadows(obj);
-          tryCenterAndBounds();
-        }, { once:true });
-        el.addEventListener('model-error', function(e){ console.warn('Essential model failed to load:', id, e && e.detail ? e.detail.src : ''); loaded[id] = null; tryCenterAndBounds(); }, { once:true });
-      });
-
-      function tryCenterAndBounds(){
-        const objs = Object.values(loaded).filter(Boolean);
-        if (objs.length < mainIds.length){
-          // if some essential models missing, fallback to default center
-          // but wait until at least one is present; else the fallback timeout will run later
-        }
-        // compute bounding box from whatever is available (so partial loads still center reasonably)
-        const box = new THREE.Box3();
-        objs.forEach(o=>{ try{ box.expandByObject(o); }catch(e){/* ignore */} });
-        if (box.isEmpty()){
-          // fallback center
-          rigEl.object3D.position.set(1.5, 1.6, 1.5);
-          camEl.setAttribute('position','0 0 0');
-          return;
-        }
-        const center = new THREE.Vector3(); box.getCenter(center);
-        const size = new THREE.Vector3(); box.getSize(size);
-        const baseY = box.min.y;
-        const rigY = baseY + 1.6;
-        rigEl.object3D.position.set(center.x, rigY, center.z);
-        camEl.setAttribute('position','0 0 0');
-        // shadow plane
-        const planeW = Math.max(0.01, size.x), planeH = Math.max(0.01, size.z);
-        shadowPlane.setAttribute('position', `${center.x} ${baseY + 0.001} ${center.z}`);
-        shadowPlane.setAttribute('width', planeW);
-        shadowPlane.setAttribute('height', planeH);
-        // bounds for smooth-walk
-        const margin = 0.05;
-        const bounds = { minX: box.min.x + margin, maxX: box.max.x - margin, minZ: box.min.z + margin, maxZ: box.max.z - margin, minY: rigY, maxY: rigY };
-        const comp = rigEl.components['smooth-walk'];
-        if (comp && typeof comp.setBounds === 'function') comp.setBounds(bounds);
-        console.log('Centered rig at', rigEl.object3D.position, 'bounds', bounds);
-      }
-
-      // Wait for renderer, then configure shadow renderer & greenLamp internals
-      detectRendererReady(function(renderer){
-        // safety: if renderer still undefined, log and return
-        if (!renderer){ console.warn('Renderer no disponible (unexpected)'); return; }
-        // set pixel ratio low to avoid jitter/grain
-        renderer.setPixelRatio(1);
-        renderer.shadowMap.enabled = true;
-        // prefer VSM when available (less grain on many GPUs), otherwise PCFSoft
-        if (typeof THREE.VSMShadowMap !== 'undefined') renderer.shadowMap.type = THREE.VSMShadowMap;
-        else renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.outputEncoding = THREE.sRGBEncoding;
-        renderer.physicallyCorrectLights = true;
-
-        // configure greenLamp shadow internals (without moving the light)
-        (function configureGreenLamp(){
-          const greenLampEl = document.getElementById('greenLamp');
-          function tryConfig(){
-            const lightObj = greenLampEl && greenLampEl.getObject3D ? greenLampEl.getObject3D('light') : null;
-            if (!lightObj || !lightObj.shadow){
-              // try again next frame (some platforms create light a tick later)
-              requestAnimationFrame(tryConfig);
-              return;
-            }
-            try{
-              lightObj.castShadow = true;
-              const mobile = isMobile();
-              // safe map sizes (avoid extreme sizes that some drivers reject)
-              const chosen = mobile ? 1024 : 2048;
-              if (lightObj.shadow.mapSize && typeof lightObj.shadow.mapSize.set === 'function') lightObj.shadow.mapSize.set(chosen, chosen);
-              if (typeof lightObj.shadow.normalBias !== 'undefined') lightObj.shadow.normalBias = 0.05;
-              if (typeof lightObj.shadow.radius !== 'undefined') lightObj.shadow.radius = 8;
-              if (typeof lightObj.shadow.bias !== 'undefined') lightObj.shadow.bias = -0.00012;
-              if (typeof lightObj.shadow.needsUpdate !== 'undefined') lightObj.shadow.needsUpdate = true;
-              console.log('greenLamp.shadow configured', { chosen, radius: lightObj.shadow.radius, normalBias: lightObj.shadow.normalBias, bias: lightObj.shadow.bias });
-            }catch(e){ console.warn('Error configuring greenLamp.shadow', e); }
-          }
-          tryConfig();
-        })();
-        // finally, ensure any already-loaded models are sanitized and center computed
-        tryCenterAndBounds();
-      });
-
-      // safety fallback: if model-loaded events never fire, force a center after 6s
-      setTimeout(tryCenterAndBounds, 6000);
-
-    })();
-    </script>
   </a-scene>
+
+  <script>
+  /* --- COMPONENTE DE MOVIMIENTO --- */
+  AFRAME.registerComponent('smooth-walk', {
+    schema: { speed: { default: 0.06 } },
+    init: function(){
+      this.direction = new THREE.Vector3();
+      this.keys = {};
+      window.addEventListener('keydown', e=>this.keys[e.code]=true);
+      window.addEventListener('keyup',   e=>this.keys[e.code]=false);
+    },
+    tick: function(_,dt){
+      const move = new THREE.Vector3();
+      if (this.keys['KeyW'] || this.keys['ArrowUp'])    move.z -= 1;
+      if (this.keys['KeyS'] || this.keys['ArrowDown'])  move.z += 1;
+      if (this.keys['KeyA'] || this.keys['ArrowLeft'])  move.x -= 1;
+      if (this.keys['KeyD'] || this.keys['ArrowRight']) move.x += 1;
+      if (move.lengthSq()>0){
+        move.normalize();
+        move.multiplyScalar(this.data.speed*dt);
+        this.el.object3D.position.add(move);
+      }
+    }
+  });
+
+  /* --- CORREGIR MATERIALES + SOMBRAS --- */
+  function fixMaterials(el){
+    el.addEventListener('model-loaded', e=>{
+      e.detail.model.traverse(node=>{
+        if (node.isMesh){
+          node.castShadow = true;
+          node.receiveShadow = true;
+          if (node.material) node.material.transparent = true; // habilitar alphas
+        }
+      });
+    });
+  }
+
+  ['techo-entity','piso-entity','paredes-entity',
+   'asset1-entity','asset2-entity','asset3-entity',
+   'asset4-entity','asset5-entity','asset6-entity']
+   .forEach(id=>fixMaterials(document.getElementById(id)));
+
+  </script>
 </body>
 </html>
