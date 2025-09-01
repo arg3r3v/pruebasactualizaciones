@@ -3,12 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>A-Frame escena (v1.6.0) - Cuarto con GLB</title>
+  <title>A-Frame escena (v1.6.0) - Cuarto con GLB (ajustes)</title>
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <style>
     html, body { margin: 0; height: 100%; background: #000; }
     a-scene { width: 100%; height: 100vh; display: block; }
-    /* UI minimal para informar si se requiere */
     #note {
       position: absolute;
       left: 8px;
@@ -25,20 +24,18 @@
   </style>
 </head>
 <body>
-  <div id="note">A-Frame v1.6.0 — cámara rig y soporte móvil/táctil habilitado</div>
+  <div id="note">Cámara centrada (medio del cuarto 3m x 3m) — sombras triplicadas</div>
 
-  <!-- Escena A-Frame -->
   <a-scene background="color: #000" vr-mode-ui="enabled: true" embedded
            renderer="colorManagement: true"
            loading-screen="enabled: true">
 
-    <!-- Assets (usar rutas EXACTAS según lo solicitado) -->
+    <!-- Assets (rutas EXACTAS según lo solicitado) -->
     <a-assets timeout="0">
       <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
       <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
       <a-asset-item id="paredes" src="models/paredes.glb"></a-asset-item>
 
-      <!-- Nota: siguiendo exactamente la instrucción dada -->
       <a-asset-item id="assets1" src="models/asset1s.glb"></a-asset-item>
       <a-asset-item id="assets2" src="models/assets2.glb"></a-asset-item>
       <a-asset-item id="assets3" src="models/assets3.glb"></a-asset-item>
@@ -55,27 +52,25 @@
               shadow="cast: true; receive: false">
     </a-entity>
 
-    <!-- Rig (móvil y escritorio). Cámara a y=1.6 -->
-    <a-entity id="rig" position="0 0 0" wasd-controls="acceleration: 30">
-      <a-entity id="head"
-                position="0 1.6 0">
+    <!-- Rig centrado en el medio del cuarto.
+         Las paredes miden 3 m; por tanto colocamos la cámara en el centro: (1.5, 0, 1.5).
+         Cámara a altura humana y=1.6 -->
+    <a-entity id="rig" position="1.5 0 1.5" wasd-controls="acceleration: 30">
+      <a-entity id="head" position="0 1.6 0">
         <a-camera id="camera"
                   look-controls="pointerLockEnabled: false; touchEnabled: true"
                   fov="75"
                   near="0.01"
-                  far="1000"
-                  wasd-controls-enabled="false">
-          <!-- Cursor solo para interacción en VR/desktop cuando se active -->
+                  far="1000">
           <a-cursor id="cursor" fuse="false" rayOrigin="mouse" visible="false"></a-cursor>
         </a-camera>
       </a-entity>
     </a-entity>
 
     <!-- Cada GLB cargado en su propia entidad (sin alterar transformaciones internas) -->
-    <!-- No cambiamos posiciones/rotaciones internas: colocamos cada gltf-model en su propia entidad tal cual -->
-    <a-entity id="techo-entity" gltf-model="#techo" shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="piso-entity"  gltf-model="#piso"  shadow="cast: true; receive: true"></a-entity>
-    <a-entity id="paredes-entity" gltf-model="#paredes" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="techo-entity"    gltf-model="#techo"    shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="piso-entity"     gltf-model="#piso"     shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="paredes-entity"  gltf-model="#paredes"  shadow="cast: true; receive: true"></a-entity>
 
     <a-entity id="asset1-entity" gltf-model="#assets1" shadow="cast: true; receive: true"></a-entity>
     <a-entity id="asset2-entity" gltf-model="#assets2" shadow="cast: true; receive: true"></a-entity>
@@ -85,15 +80,14 @@
     <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast: true; receive: true"></a-entity>
     <a-entity id="asset7-entity" gltf-model="#assets7" shadow="cast: true; receive: true"></a-entity>
 
-    <!-- Opcional: plano receptor de sombras si se desea, pero sin interferir con GLB -->
-    <a-plane id="shadow-receiver" position="0 0 0" rotation="-90 0 0" width="20" height="20" visible="false"></a-plane>
+    <!-- Plano receptor de sombras en el piso — visible para verificar sombras -->
+    <a-plane id="shadow-receiver" position="1.5 0 1.5" rotation="-90 0 0" width="3" height="3" visible="true" recieve-shadow></a-plane>
 
-    <!-- Script para configurar renderer y sombras según dispositivo, y para habilitar cast/receive en mallas GLTF -->
+    <!-- Script: configurar renderer (shadow maps triplicados) y reducir ruido en sombras -->
     <script>
       (function () {
         const scene = document.querySelector('a-scene');
 
-        // Utilidad para detectar móvil: pointer:coarse OR touch capability
         function isMobile() {
           try {
             return window.matchMedia && window.matchMedia('(pointer: coarse)').matches
@@ -103,53 +97,64 @@
         }
 
         scene.addEventListener('render-target-loaded', function () {
-          // A-Frame ha creado el renderer → configúralo según lo pedido
           const renderer = scene.renderer;
           if (!renderer) { return; }
 
-          // Activar shadow map y tipo
+          // Activar shadow map y tipo suave
           renderer.shadowMap.enabled = true;
-          // THREE está disponible globalmente en A-Frame
           renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          // Output encoding sRGB
+
+          // Encoding sRGB para materiales
           renderer.outputEncoding = THREE.sRGBEncoding;
 
-          // Pixel ratio: limitar para no saturar móviles
+          // Ajuste de pixel ratio (limitar para balance rendimiento/ruido)
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
-          // Ajustes de tamaño de shadow map en la luz puntual (greenLamp)
+          // Opciones para mejorar calidad/ruido
+          try {
+            renderer.physicallyCorrectLights = true;
+            // Tone mapping ayuda a evitar clipping y puede mejorar sensación de ruido en altas luces
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+          } catch (e) { /* no crítico si no existe */ }
+
+          // Obtener la luz puntual
           const greenLampEl = document.getElementById('greenLamp');
-          const lightObj = greenLampEl && greenLampEl.getObject3D && greenLampEl.getObject3D('light');
+          let lightObj = null;
+          if (greenLampEl) {
+            lightObj = greenLampEl.getObject3D && greenLampEl.getObject3D('light');
+          }
 
-          // Decide tamaño en base a dispositivo
           const mobile = isMobile();
-          // Tamaños sugeridos: desktop entre 1024 y 2048; móvil menor (ej. 1024)
-          const shadowSizeDesktop = 2048; // dentro del rango pedido
-          const shadowSizeMobile  = 1024; // menor para móviles
 
-          const chosenSize = mobile ? shadowSizeMobile : shadowSizeDesktop;
+          // Valores base anteriores: desktop 2048, mobile 1024.
+          // El usuario pidió TRIPLICAR los shadow maps → multiplicar por 3.
+          const baseDesktop = 2048;
+          const baseMobile  = 1024;
+          const chosenSize = mobile ? baseMobile * 3 : baseDesktop * 3; // 3072 móvil, 6144 desktop
 
           if (lightObj && lightObj.shadow) {
-            // Para point lights, shadow is a LightShadow with a mapSize
             try {
               lightObj.castShadow = true;
-              if (lightObj.shadow && lightObj.shadow.mapSize && typeof lightObj.shadow.mapSize.set === 'function') {
+              // Ajustar mapSize para mejores sombras (triplicado)
+              if (lightObj.shadow.mapSize && typeof lightObj.shadow.mapSize.set === 'function') {
                 lightObj.shadow.mapSize.set(chosenSize, chosenSize);
                 lightObj.shadow.needsUpdate = true;
               }
+              // Ajustar radius para suavizar artefactos (reduce banding/ruido en sombras)
+              if (typeof lightObj.shadow.radius !== 'undefined') {
+                lightObj.shadow.radius = 4;
+              }
+              // Aumentar bias ligeramente para prevenir acne de sombras en escenas con muchos polígonos
+              if (typeof lightObj.shadow.bias !== 'undefined') {
+                lightObj.shadow.bias = -0.0005;
+              }
             } catch (err) {
-              console.warn('No se pudo ajustar mapSize de la luz (lightObj.shadow).', err);
+              console.warn('No se pudo ajustar completamente lightObj.shadow:', err);
             }
           }
 
-          // Para mejorar desempeño en móviles, desactivar antialias si es móvil (opcional, no cambia transformaciones internas)
-          if (mobile) {
-            try {
-              renderer.antialias = false;
-            } catch (e) { /* no crítico */ }
-          }
-
-          // Activar sombras en cada glTF cuando cargue (cada entidad tiene gltf-model)
+          // Habilitar cast/receive shadows en mallas glTF al cargarse y mejorar encoding de texturas
           const gltfEntities = [
             'techo-entity','piso-entity','paredes-entity',
             'asset1-entity','asset2-entity','asset3-entity','asset4-entity','asset5-entity','asset6-entity','asset7-entity'
@@ -157,19 +162,18 @@
 
           gltfEntities.forEach(function (el) {
             el.addEventListener('model-loaded', function (evt) {
-              const model = evt.detail && evt.detail.model ? evt.detail.model : el.getObject3D('mesh') || el.getObject3D('gltf');
-              // The glTF loader attaches the scene in evt.detail.model (a THREE.Object3D)
-              const obj = evt.detail && evt.detail.model ? evt.detail.model : el.getObject3D('mesh') || el.getObject3D('gltf');
-
+              const model = (evt.detail && evt.detail.model) ? evt.detail.model : el.getObject3D('gltf') || el.getObject3D('mesh');
+              const obj = model || el.getObject3D('mesh') || el.getObject3D('gltf');
               if (obj) {
                 obj.traverse(function (node) {
-                  // Habilitar cast/receive shadows en mallas (no tocar transformaciones)
                   if (node.isMesh) {
                     node.castShadow = true;
                     node.receiveShadow = true;
-                    // En caso de usar materials que requieran sRGB correction, marcar si aplica:
-                    if (node.material && node.material.map) {
-                      node.material.map.encoding = THREE.sRGBEncoding;
+                    if (node.material) {
+                      // Forzar encoding de texturas a sRGB si aplicable para reducir incorrecta luminancia que puede generar ruido
+                      if (node.material.map) {
+                        node.material.map.encoding = THREE.sRGBEncoding;
+                      }
                       node.material.needsUpdate = true;
                     }
                   }
@@ -178,16 +182,15 @@
             }, { once: false });
           });
 
-          // Información de consola para debugging (opcional)
+          // Consola informativa
           console.log('Renderer configurado: shadowMap.enabled=', renderer.shadowMap.enabled,
                       ' type=', renderer.shadowMap.type,
                       ' pixelRatio=', renderer.getPixelRatio ? renderer.getPixelRatio() : (window.devicePixelRatio || 1),
-                      ' shadowSize=', chosenSize);
+                      ' shadowMapSize=', chosenSize,
+                      ' mobile=', mobile);
         });
 
-        // Asegurar que look-controls está activo en la cámara y wasd controla el rig
-        // (ya configurado en el HTML; aquí mantenemos por compatibilidad)
-        // Nothing further required.
+        // No más cambios a transformaciones internas de los GLB.
       })();
     </script>
 
