@@ -8,10 +8,17 @@
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
-  <style> html,body{height:100%;margin:0;background:#000} a-scene{height:100vh;width:100vw} </style>
+  <style>
+    html,body{height:100%;margin:0;background:#000}
+    a-scene{height:100vh;width:100vw;display:block}
+  </style>
 </head>
 <body>
-  <a-scene id="scene" background="color:#000000" renderer="antialias:true; physicallyCorrectLights:false" shadow="type:pcfsoft; autoUpdate:true">
+  <a-scene id="scene"
+           background="color:#000000"
+           renderer="antialias:true; physicallyCorrectLights:true"
+           shadow="type:pcfsoft; autoUpdate:true">
+
     <a-assets>
       <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
       <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
@@ -21,57 +28,71 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- una sola instancia del cuarto1 -->
+    <!-- Cuarto (escenario principal) -->
     <a-entity id="cuarto1_ent" gltf-model="#cuarto1" nav-mesh shadow="receive:true"></a-entity>
 
-    <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="receive:true"></a-entity>
-    <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="receive:true"></a-entity>
-    <a-entity id="cuarto4_ent" gltf-model="#cuarto4" shadow="receive:true"></a-entity>
-    <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="receive:true"></a-entity>
-    <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="receive:true"></a-entity>
+    <!-- Objetos interiores (props) -->
+    <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="cuarto4_ent" gltf-model="#cuarto4" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="cast:true; receive:true"></a-entity>
+    <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="cast:true; receive:true"></a-entity>
 
-    <a-entity id="lamp" position="0 2.6 0"
-              light="type:point; color:#ffffff; intensity:2.0; distance:35; decay:2; castShadow:true"></a-entity>
-
-    <a-entity id="rig" position="0 0 2" movement-controls="constrainToNavMesh:true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
-      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled:true"><a-cursor></a-cursor></a-entity>
+    <!-- LUZ VERDE interior: posición solicitada (-6,2,4) e intensidad 10x -->
+    <a-entity id="greenLamp"
+              position="-6 2 4"
+              light="type:point; color: #2bff7a; intensity: 18; distance: 30; decay: 2; castShadow: true">
     </a-entity>
-    
-<script>
-(function(){
-  const sceneEl = document.querySelector('a-scene');
-  if (!sceneEl) { console.warn('No a-scene found'); return; }
 
-  // Ajustes globales
-  const SHADOW_MAP_TYPE = THREE.PCFSoftShadowMap; // más estable que VSM para este caso
-  const TARGET_MIN_TEX = 1024; // tamaño mínimo recomendado para color maps en px
-  const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 2);
+    <!-- RIG / cámara -->
+    <a-entity id="rig" position="0 0 2"
+              movement-controls="constrainToNavMesh:true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
+      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled:true">
+        <a-cursor></a-cursor>
+      </a-entity>
+    </a-entity>
 
-  // Helper utilities
-  function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
-  function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
+  </a-scene>
 
-  // Forzar renderer settings
-  sceneEl.addEventListener('render-target-loaded', () => {
-    try {
-      const renderer = sceneEl.renderer;
-      if (!renderer) return;
-      renderer.setPixelRatio(MAX_PIXELRATIO);
-      renderer.outputEncoding = THREE.sRGBEncoding;
-      renderer.physicallyCorrectLights = true;
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = SHADOW_MAP_TYPE;
-      console.log('[fix] renderer configured: pixelRatio', renderer.getPixelRatio(), 'shadowMapType', renderer.shadowMap.type);
-    } catch(e){ console.warn('[fix] renderer config fail', e); }
-  });
+  <!-- Script: fuerza PBR/shadows y ajusta texturas/shadowmap -->
+  <script>
+  (function(){
+    const sceneEl = document.getElementById('scene');
+    if (!sceneEl) return console.warn('a-scene no encontrado');
 
-  // Promotion de un Material a MeshStandard, manteniendo mapas relevantes
-  function promoteToStandard(oldMat, renderer){
-    try {
+    const TARGET_MIN_TEX = 1024;
+    const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 2);
+    const SHADOW_MAP_SIZE = 2048; // cambia a 4096 si tu máquina lo aguanta
+    const SHADOW_BIAS = -0.0005;
+
+    // utilidades
+    function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
+    function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
+    function preferSRGBForKey(key){
+      const col = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
+      return col.indexOf(key) !== -1;
+    }
+
+    // renderer ajustes cuando esté listo
+    sceneEl.addEventListener('render-target-loaded', () => {
+      try {
+        const renderer = sceneEl.renderer;
+        if (!renderer) return;
+        renderer.setPixelRatio(MAX_PIXELRATIO);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        console.log('[fix] renderer configured: pixelRatio', renderer.getPixelRatio(), 'shadowMapType', renderer.shadowMap.type);
+      } catch (e) {
+        console.warn('[fix] renderer config error', e);
+      }
+    });
+
+    // Promover material a MeshStandardMaterial copiando mapas relevantes
+    function promoteToStandard(oldMat, renderer){
       if (!oldMat) return null;
       if (oldMat.isMeshStandardMaterial) return oldMat;
       const newMat = new THREE.MeshStandardMaterial();
-      // Copy relevant maps and props conservatively
       ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap'].forEach(k=>{
         if (oldMat[k]) newMat[k] = oldMat[k];
       });
@@ -82,43 +103,31 @@
       newMat.side = THREE.DoubleSide;
       newMat.needsUpdate = true;
       return newMat;
-    } catch(e){ console.warn('[fix] promote fail', e); return null; }
-  }
+    }
 
-  // Asegura que una textura sea POT y tenga mipmaps + filtros adecuados
-  function ensureTextureGood(tex, key, renderer){
-    if (!tex) return {ok:false, reason:'no-tex'};
-    const img = tex.image;
-    const info = {
-      key,
-      width: img ? (img.width || img.naturalWidth || img.bitmapWidth || 0) : 0,
-      height: img ? (img.height || img.naturalHeight || img.bitmapHeight || 0) : 0,
-      isPOT: img ? (isPowerOfTwo(img.width || img.naturalWidth || img.bitmapWidth || 0) && isPowerOfTwo(img.height || img.naturalHeight || img.bitmapHeight || 0)) : false,
-      generateMipmaps: !!tex.generateMipmaps
-    };
-    // force encoding per key
-    const colorKeys = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
-    const linearKeys = ['normalMap','metalnessMap','roughnessMap','bumpMap','displacementMap'];
-    try {
-      if (colorKeys.includes(key)) tex.encoding = THREE.sRGBEncoding;
-      if (linearKeys.includes(key)) tex.encoding = THREE.LinearEncoding;
-    } catch(e){}
-
-    // generate mipmaps / filters if missing (best-effort)
-    if (!info.isPOT || !info.generateMipmaps || info.width < TARGET_MIN_TEX || info.height < TARGET_MIN_TEX) {
-      // try to upscale with a canvas to a POT size (best effort). This can fail cross-origin.
+    // Intenta arreglar/actualizar una textura (mipmaps, encoding, filtros). Devuelve newTex si reemplaza.
+    function ensureTextureGood(tex, key, renderer){
+      if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
+      const img = tex.image;
+      const width = img.width || img.naturalWidth || img.bitmapWidth || 0;
+      const height = img.height || img.naturalHeight || img.bitmapHeight || 0;
+      const isPOT = isPowerOfTwo(width) && isPowerOfTwo(height);
+      // encoding
       try {
-        if (img && (img instanceof HTMLImageElement || img instanceof HTMLCanvasElement || (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap))) {
-          const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || renderer.capabilities.getMaxTextureSize && renderer.capabilities.getMaxTextureSize()) || 4096;
-          const desired = Math.min(maxTex, Math.max(TARGET_MIN_TEX, Math.max(info.width, info.height)));
+        tex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding;
+      } catch(e){}
+      // if small or not POT -> try upscale via canvas (best-effort, may fail cross-origin)
+      if (!isPOT || Math.max(width, height) < TARGET_MIN_TEX) {
+        try {
+          const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096);
+          const desired = Math.min(maxTex, Math.max(TARGET_MIN_TEX, Math.max(width, height)));
           const target = nextPOT(desired);
           const canvas = document.createElement('canvas');
           canvas.width = target; canvas.height = target;
           const ctx = canvas.getContext('2d');
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
-          // preserve aspect
-          const aspect = (info.width && info.height) ? (info.width / info.height) : 1;
+          const aspect = width && height ? (width/height) : 1;
           let dw = target, dh = target;
           if (aspect > 1) dh = Math.round(target / aspect); else dw = Math.round(target * aspect);
           const ox = Math.round((target-dw)/2), oy = Math.round((target-dh)/2);
@@ -129,119 +138,173 @@
           newTex.magFilter = THREE.LinearFilter;
           try { newTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch(e){}
           newTex.wrapS = newTex.wrapT = THREE.RepeatWrapping;
+          newTex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding;
           newTex.needsUpdate = true;
           return {ok:true, replaced:true, newTex};
+        } catch(e){
+          return {ok:false, reason:'canvas-resize-failed', err:e};
         }
-      } catch(e){
-        return {ok:false, reason:'canvas-resize-failed', err:e};
       }
+      // otherwise ensure proper filters/mipmaps
+      tex.generateMipmaps = true;
+      tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
+      tex.magFilter = tex.magFilter || THREE.LinearFilter;
+      try { tex.anisotropy = tex.anisotropy || (renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
+      tex.needsUpdate = true;
+      return {ok:true, replaced:false, info:{width,height,isPOT}};
     }
 
-    // ensure filters/mipmaps present
-    tex.generateMipmaps = true;
-    tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
-    tex.magFilter = tex.magFilter || THREE.LinearFilter;
-    try { tex.anisotropy = tex.anisotropy || (renderer.capabilities && renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
-    tex.needsUpdate = true;
-    return {ok:true, replaced:false, info};
-  }
+    // Detectar candidate floor meshes dentro de un model: por nombre o por area XZ
+    function detectFloorCandidates(root){
+      const meshes = [];
+      root.traverse(node => { if (node.isMesh) meshes.push(node); });
+      if (!meshes.length) return [];
+      const nameCandidates = meshes.filter(m => {
+        if (!m.name) return false;
+        const n = m.name.toLowerCase();
+        return n.includes('floor') || n.includes('piso') || n.includes('ground') || n.includes('suelo');
+      });
+      if (nameCandidates.length) return nameCandidates;
+      // fallback: top area XZ
+      const areas = meshes.map(m => {
+        const bb = new THREE.Box3().setFromObject(m);
+        const s = new THREE.Vector3(); bb.getSize(s);
+        return {m, area: s.x * s.z, size:s};
+      }).sort((a,b)=>b.area-a.area);
+      return areas.slice(0,1).map(x=>x.m);
+    }
 
-  // Recorre un modelo, imprime problemas y aplica fixes
-  function inspectAndFixModel(el){
-    const renderer = sceneEl.renderer;
-    if (!el) return;
-    el.addEventListener('model-loaded', (ev) => {
-      try {
-        const root = ev.detail.model;
-        const problems = [];
-        root.traverse(node => {
-          if (!node.isMesh) return;
-          // ensure normals exist
-          if (node.geometry && !node.geometry.attributes.normal) {
-            node.geometry.computeVertexNormals();
-            problems.push({type:'computedNormals', mesh: node.name || node.id});
-          }
-          // per material
-          const mats = Array.isArray(node.material) ? node.material : [node.material];
-          mats.forEach((mat, idx) => {
-            if (!mat) return;
-            // if BasicMaterial -> promote
-            if (mat.isMeshBasicMaterial) {
-              const promoted = promoteToStandard(mat, renderer);
-              if (promoted) {
-                if (Array.isArray(node.material)) node.material[idx] = promoted;
-                else node.material = promoted;
-                problems.push({type:'promotedBasic', mesh: node.name || node.id, matIndex: idx});
-              } else {
-                problems.push({type:'basicNoPromote', mesh: node.name || node.id});
-              }
+    // Inspecciona y arregla un entity que tiene gltf-model
+    function inspectAndFixModel(el){
+      const renderer = sceneEl.renderer;
+      if (!el) return;
+      el.addEventListener('model-loaded', (ev) => {
+        try {
+          const root = ev.detail.model;
+          const fixes = [];
+          // marcar sombras y arreglar materiales/texturas
+          root.traverse(node => {
+            if (!node.isMesh) return;
+            // ensure normals
+            if (node.geometry && !node.geometry.attributes.normal) {
+              node.geometry.computeVertexNormals();
+              fixes.push({type:'computedNormals', mesh: node.name || node.id});
             }
-            // ensure common maps are good
-            ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap'].forEach(k => {
-              if (mat[k]) {
-                const result = ensureTextureGood(mat[k], k, renderer);
-                if (result.ok && result.replaced && result.newTex) {
-                  mat[k] = result.newTex;
-                  mat.needsUpdate = true;
-                  problems.push({type:'replacedTex', mesh: node.name || node.id, key:k, size: result.newTex.image.width + 'x' + result.newTex.image.height});
-                } else if (!result.ok) {
-                  problems.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: result.reason || ''});
+            // materials
+            const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
+            mats.forEach((mat, idx) => {
+              if (!mat) return;
+              // if Basic or Lambert -> promote to standard
+              if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
+                const promoted = promoteToStandard(mat, renderer);
+                if (promoted) {
+                  if (Array.isArray(node.material)) node.material[idx] = promoted;
+                  else node.material = promoted;
+                  fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
                 }
               }
+              // textures keys to check
+              ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap'].forEach(k => {
+                if (node.material && node.material[k]) {
+                  const res = ensureTextureGood(node.material[k], k, renderer);
+                  if (res.ok && res.replaced && res.newTex) {
+                    node.material[k] = res.newTex;
+                    node.material.needsUpdate = true;
+                    fixes.push({type:'replacedTexture', mesh: node.name || node.id, key: k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
+                  } else if (!res.ok) {
+                    fixes.push({type:'texProblem', mesh: node.name || node.id, key: k, reason: res.reason || ''});
+                  }
+                }
+              });
             });
-            // ensure receive/cast shadows
+            // siempre permitir que los meshes lancen y reciban sombras.
             node.castShadow = true;
             node.receiveShadow = true;
           });
-        });
 
-        // log summary
-        if (problems.length) console.log('[fix] issues found/fixed for', el.id, problems);
-        else console.log('[fix] no issues found for', el.id);
-      } catch(e){ console.warn('[fix] model inspect fail for', el.id, e); }
-    });
-    // if already loaded
-    const maybe = el.getObject3D('mesh') || el.getObject3D('model');
-    if (maybe) el.emit('model-loaded', { model: maybe }, false);
-  }
+          // detectar y arreglar piso(s)
+          const floors = detectFloorCandidates(root);
+          floors.forEach(f => {
+            f.receiveShadow = true;
+            f.castShadow = false;
+            if (f.material) {
+              if (Array.isArray(f.material)) f.material.forEach(m=>{ if (m) { m.side = THREE.DoubleSide; m.needsUpdate = true; } });
+              else { f.material.side = THREE.DoubleSide; f.material.needsUpdate = true; }
+            }
+            fixes.push({type:'floorMarked', mesh: f.name || f.id});
+          });
 
-  // Toggle utilities for visual debugging
-  window.__aframe_debug = {
-    toggleWireframe: function(state){
-      sceneEl.object3D.traverse(node=>{
-        if (node.isMesh && node.material){
-          const mats = Array.isArray(node.material)?node.material:[node.material];
-          mats.forEach(m=>{ if (m) m.wireframe = (state===undefined) ? !m.wireframe : !!state; m.needsUpdate=true; });
+          console.log('[fix] issues found/fixed for', el.id, fixes.length ? fixes : 'none', fixes);
+        } catch(e){
+          console.warn('[fix] model inspect error for', el.id, e);
         }
       });
-    },
-    onlyAmbient: function(on){
-      // toggle off all non-ambient lights
-      sceneEl.object3D.traverse(node=>{
-        if (node.isLight && node.type!=='AmbientLight'){
-          node.visible = !on? true : false;
-        }
-      });
-      console.log('[debug] onlyAmbient=', !!on);
-    },
-    listMaterials: function(){
-      const out=[];
-      sceneEl.object3D.traverse(n=>{ if(n.isMesh && n.material) out.push({mesh:n.name||n.id, material:n.material}); });
-      console.log(out);
-      return out;
+
+      // cached case: if already loaded, trigger
+      const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+      if (maybe) el.emit('model-loaded', { model: maybe }, false);
     }
-  };
 
-  // run for all gltf-model nodes
-  const nodes = sceneEl.querySelectorAll('[gltf-model]');
-  nodes.forEach(inspectAndFixModel);
+    // set shadow params for our lamp
+    function boostLampShadows(lampElId){
+      const el = document.getElementById(lampElId);
+      if (!el) return;
+      setTimeout(()=>{
+        const light = el.getObject3D && el.getObject3D('light');
+        if (!light) { console.warn('Light object not found for', lampElId); return; }
+        light.castShadow = true;
+        if (light.shadow) {
+          const max = Math.min(SHADOW_MAP_SIZE, (sceneEl.renderer && sceneEl.renderer.capabilities && sceneEl.renderer.capabilities.maxTextureSize) || SHADOW_MAP_SIZE);
+          light.shadow.mapSize.width = max;
+          light.shadow.mapSize.height = max;
+          light.shadow.bias = SHADOW_BIAS;
+          // expand camera for point light (if present)
+          if (light.shadow.camera) {
+            light.shadow.camera.near = 0.1;
+            light.shadow.camera.far = 200;
+            if (typeof light.shadow.camera.updateProjectionMatrix === 'function') light.shadow.camera.updateProjectionMatrix();
+          }
+        }
+        console.log('[fix] shadow params applied for', lampElId, 'mapSize:', light.shadow && light.shadow.mapSize ? light.shadow.mapSize.width : 'n/a');
+      }, 250);
+    }
 
-  // If user wants immediate debug, expose quick actions in console:
-  console.log('[fix] Diagnostics loaded. Use __aframe_debug.toggleWireframe(), __aframe_debug.onlyAmbient(true), __aframe_debug.listMaterials() in the console.');
+    // scan all gltf-model entities
+    const gltfNodes = sceneEl.querySelectorAll('[gltf-model]');
+    gltfNodes.forEach(el => inspectAndFixModel(el));
 
-})();
-</script>
+    // boost lamp shadows
+    boostLampShadows('greenLamp');
 
-  </a-scene>
+    // debug utilities
+    window.__aframe_debug = {
+      toggleWireframe: function(state){
+        sceneEl.object3D.traverse(node=>{
+          if (node.isMesh && node.material){
+            const mats = Array.isArray(node.material)?node.material:[node.material];
+            mats.forEach(m=>{ if (m){ m.wireframe = (state===undefined) ? !m.wireframe : !!state; m.needsUpdate=true; } });
+          }
+        });
+      },
+      onlyAmbient: function(on){
+        sceneEl.object3D.traverse(node=>{
+          if (node.isLight && node.type !== 'AmbientLight'){
+            node.visible = !on ? true : false;
+          }
+        });
+        console.log('[debug] onlyAmbient=', !!on);
+      },
+      listMaterials: function(){
+        const out = [];
+        sceneEl.object3D.traverse(n => { if (n.isMesh && n.material) out.push({mesh: n.name || n.id, material: n.material}); });
+        console.log(out);
+        return out;
+      }
+    };
+
+    console.log('[fix] Diagnostics loaded. Use __aframe_debug.toggleWireframe(), __aframe_debug.onlyAmbient(true), __aframe_debug.listMaterials() in the console.');
+
+  })();
+  </script>
 </body>
 </html>
