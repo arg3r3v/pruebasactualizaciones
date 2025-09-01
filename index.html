@@ -5,17 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Galería — Diagnóstico y correcciones (posiciones actualizadas)</title>
 
-  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
+  <!-- Nota: idealmente añade SRI (integrity) para producción; aquí dejo crossorigin para reducir riesgos -->
+  <script crossorigin="anonymous" src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
-  <style> html,body{height:100%;margin:0;background:#000} a-scene{height:100vh;width:100vw} </style>
+  <style>
+    html,body{height:100%;margin:0;background:#000}
+    a-scene{height:100vh;width:100vw}
+  </style>
 </head>
 <body>
   <a-scene id="scene"
            background="color:#000000"
-           renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true"
-           shadow="type:pcfsoft; autoUpdate:true">
-
+           renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true">
     <a-assets>
       <a-asset-item id="cuarto1" src="models/cuarto1.glb"></a-asset-item>
       <a-asset-item id="cuarto2" src="models/cuarto2.glb"></a-asset-item>
@@ -28,7 +30,7 @@
     <!-- Ambient suave -->
     <a-entity light="type:ambient; intensity:0.14; color:#0b0b0b"></a-entity>
 
-    <!-- Escenario y props -->
+    <!-- Escenario y props (sin cambiar posiciones/intensidades) -->
     <a-entity id="cuarto1_ent" gltf-model="#cuarto1" nav-mesh shadow="receive:true"></a-entity>
     <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="cast:true; receive:true"></a-entity>
@@ -36,20 +38,23 @@
     <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="cast:true; receive:true"></a-entity>
 
-    <!-- LUZ: posición Y subida 80% -> 1.6 * 1.8 = 2.88 (intensity permanece igual) -->
+    <!-- LUZ: mantengo tu luz, sin tocar posición/intensidad -->
     <a-entity id="greenLamp" position="0 2.88 0"
               light="type:point; color: #2bff7a; intensity: 144; distance: 30; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- RIG / Cámara: altura subida 50% -> 2.7 * 1.5 = 4.05 -->
+    <!-- RIG / Cámara: mantengo la cámara tal como pediste -->
     <a-entity id="rig" position="0 0 2"
-              movement-controls="constrainToNavMesh:true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
+              movement-controls="constrainToNavMesh: true; controls: checkpoint,gamepad,trackpad,keyboard,nipple;">
       <a-entity camera position="0 4.05 0" look-controls="pointerLockEnabled:true"><a-cursor></a-cursor></a-entity>
     </a-entity>
   </a-scene>
 
 <script>
 (function(){
+  // Robust THREE reference (en A-Frame THREE puede vivir en AFRAME.THREE)
+  const THREE = (window.AFRAME && AFRAME.THREE) ? AFRAME.THREE : window.THREE;
+
   const sceneEl = document.getElementById('scene');
   if (!sceneEl) return;
 
@@ -59,48 +64,72 @@
   const SHADOW_BIAS = -0.0004;
   const SHADOW_NORMAL_BIAS = 0.02;
 
-  function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
+  function isPowerOfTwo(v){ return Number.isInteger(v) && (v & (v - 1)) === 0; }
   function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
   function preferSRGBForKey(key){
     const col = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
     return col.indexOf(key) !== -1;
   }
 
+  // Configura renderer cuando esté listo (buena práctica)
   sceneEl.addEventListener('render-target-loaded', () => {
     try {
       const renderer = sceneEl.renderer;
       if (!renderer) return;
       renderer.setPixelRatio(MAX_PIXELRATIO);
-      renderer.outputEncoding = THREE.sRGBEncoding;
+      if (THREE && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      if (THREE && THREE.PCFSoftShadowMap) renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       console.log('[fix] renderer configured; pixelRatio=', renderer.getPixelRatio());
     } catch(e){ console.warn('[fix] renderer config failed', e); }
   });
 
-  function promoteToStandard(oldMat, renderer){
+  // Promueve materiales clásicos a MeshStandardMaterial preservando flags importantes
+  function promoteToStandard(oldMat){
     if (!oldMat) return null;
     if (oldMat.isMeshStandardMaterial) return oldMat;
     const newMat = new THREE.MeshStandardMaterial();
-    ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap'].forEach(k=>{
-      if (oldMat[k]) newMat[k] = oldMat[k];
-    });
+
+    // copiar texturas comunes si existen
+    const copyTexKeys = ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap','lightMap'];
+    copyTexKeys.forEach(k => { if (oldMat[k]) newMat[k] = oldMat[k]; });
+
+    // copiar propiedades/flags que afectan apariencia/performance
+    const copyFlags = [
+      'transparent','opacity','alphaTest','vertexColors','skinning','morphTargets',
+      'flatShading','wireframe','emissiveIntensity','metalness','roughness','name','userData'
+    ];
+    copyFlags.forEach(k => { if (oldMat[k] !== undefined) newMat[k] = oldMat[k]; });
+
+    // preservar 'side' si existía, evita forzar DoubleSide globalmente
+    newMat.side = (oldMat.side !== undefined) ? oldMat.side : THREE.FrontSide;
+
     if (oldMat.color) newMat.color.copy(oldMat.color);
     if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
-    newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : 1.0;
-    newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : 0.0;
-    newMat.side = THREE.DoubleSide;
+
+    // default si no venían del material original
+    newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : (newMat.roughness !== undefined ? newMat.roughness : 1.0);
+    newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : (newMat.metalness !== undefined ? newMat.metalness : 0.0);
+
     newMat.needsUpdate = true;
     return newMat;
   }
 
-  function ensureTextureGood(tex, key, renderer){
+  // Mejora y valida texturas: respeta wrap/flipY/format; evita reemplazar mapas que requieren uv2 sin uv2
+  function ensureTextureGood(tex, key, renderer, mesh){
     if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
     const img = tex.image;
     const w = img.width || img.naturalWidth || img.bitmapWidth || 0;
     const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
     const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
-    try { tex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding; } catch(e){}
+
+    try { tex.encoding = preferSRGBForKey(key) && THREE && THREE.sRGBEncoding ? THREE.sRGBEncoding : THREE.LinearEncoding; } catch(e){}
+
+    // Si es aoMap o lightMap necesitamos uv2 en la geometría: si no hay uv2, no reescalar automáticamente
+    if ((key === 'aoMap' || key === 'lightMap') && mesh && mesh.geometry && !mesh.geometry.attributes.uv2) {
+      return {ok:false, reason:'missing-uv2'};
+    }
+
     if (!isPOT || Math.max(w,h) < TARGET_MIN_TEX) {
       try {
         const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
@@ -116,27 +145,43 @@
         if (aspect > 1) dh = Math.round(target / aspect); else dw = Math.round(target * aspect);
         const ox = Math.round((target-dw)/2), oy = Math.round((target-dh)/2);
         ctx.drawImage(img, ox, oy, dw, dh);
+
         const newTex = new THREE.CanvasTexture(canvas);
         newTex.generateMipmaps = true;
         newTex.minFilter = THREE.LinearMipmapLinearFilter;
         newTex.magFilter = THREE.LinearFilter;
-        try { newTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch(e){}
-        newTex.wrapS = newTex.wrapT = THREE.RepeatWrapping;
-        newTex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding;
+
+        // preservar anisotropy si es posible
+        try { 
+          const maxAniso = renderer.capabilities && (renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : (renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy())) || 1;
+          newTex.anisotropy = maxAniso;
+        } catch(e){ newTex.anisotropy = 1; }
+
+        // intenta preservar wrap/flipY/premultiply/format si vinieron del original
+        newTex.wrapS = tex.wrapS || THREE.ClampToEdgeWrapping;
+        newTex.wrapT = tex.wrapT || THREE.ClampToEdgeWrapping;
+        if (tex.flipY !== undefined) newTex.flipY = tex.flipY;
+        if (tex.premultiplyAlpha !== undefined) newTex.premultiplyAlpha = tex.premultiplyAlpha;
+        if (tex.format !== undefined) newTex.format = tex.format;
+
+        newTex.encoding = preferSRGBForKey(key) && THREE && THREE.sRGBEncoding ? THREE.sRGBEncoding : THREE.LinearEncoding;
         newTex.needsUpdate = true;
         return {ok:true, replaced:true, newTex};
       } catch(e){
         return {ok:false, reason:'canvas-resize-failed', err:e};
       }
     }
+
+    // si ya está bien
     tex.generateMipmaps = true;
     tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
     tex.magFilter = tex.magFilter || THREE.LinearFilter;
-    try { tex.anisotropy = tex.anisotropy || (renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
+    try { tex.anisotropy = tex.anisotropy || (renderer.capabilities && renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
     tex.needsUpdate = true;
     return {ok:true, replaced:false, info:{w,h,isPOT}};
   }
 
+  // Detecta candidate para suelo (heurístico por nombre o mayor area)
   function detectFloorCandidates(root){
     const meshes = [];
     root.traverse(node => { if (node.isMesh) meshes.push(node); });
@@ -146,39 +191,54 @@
     const areaArr = meshes.map(m=>{
       const bb = new THREE.Box3().setFromObject(m);
       const s = new THREE.Vector3(); bb.getSize(s);
-      return {m, area: s.x * s.z, size:s};
+      return {m, area: Math.abs(s.x * s.z), size:s};
     }).sort((a,b)=>b.area-a.area);
     return areaArr.slice(0,1).map(x=>x.m);
   }
 
+  // Inspecciona y arregla modelos; listener con once:true para evitar acumulación
   function inspectAndFixModel(el){
-    const renderer = sceneEl.renderer;
     if (!el) return;
-    el.addEventListener('model-loaded', (ev) => {
+    const renderer = sceneEl.renderer;
+
+    function onModelLoaded(ev){
       try {
-        const root = ev.detail.model;
+        const root = ev.detail && ev.detail.model ? ev.detail.model : (el.getObject3D('mesh') || el.getObject3D('model'));
+        if (!root) return;
         const fixes = [];
+
         root.traverse(node => {
           if (!node.isMesh) return;
+
+          // Si no tiene normales, calcula
           if (node.geometry && !node.geometry.attributes.normal) {
             node.geometry.computeVertexNormals();
             fixes.push({type:'computedNormals', mesh: node.name || node.id});
           }
+
+          // Materiales (puede ser array o único)
           const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
           mats.forEach((mat, idx) => {
             if (!mat) return;
+
+            // Si es tipo antiguo, promuévelo preservando flags
             if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
-              const promoted = promoteToStandard(mat, renderer);
+              const promoted = promoteToStandard(mat);
               if (promoted) {
                 if (Array.isArray(node.material)) node.material[idx] = promoted;
                 else node.material = promoted;
                 fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
+                mat = promoted; // continuar usando promoted
               }
             }
-            ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap'].forEach(k => {
+
+            // Revisa mapas de textura relevantes
+            ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap','alphaMap'].forEach(k => {
               if (node.material && node.material[k]) {
-                const res = ensureTextureGood(node.material[k], k, renderer);
+                const res = ensureTextureGood(node.material[k], k, renderer, node);
                 if (res.ok && res.replaced && res.newTex) {
+                  // dispose del mapa viejo si existía para evitar fuga
+                  try { if (node.material[k] && node.material[k].dispose) node.material[k].dispose(); } catch(e){}
                   node.material[k] = res.newTex;
                   node.material.needsUpdate = true;
                   fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
@@ -188,45 +248,72 @@
               }
             });
           });
-          node.castShadow = true;
-          node.receiveShadow = true;
+
+          // Decide sombras: aplica por defecto, pero permite opt-out via userData.noShadow
+          if (!(node.userData && node.userData.noShadow)) {
+            node.castShadow = true;
+            node.receiveShadow = true;
+          }
         });
 
+        // Marca suelo para recibir sombras en forma preferente
         const floors = detectFloorCandidates(root);
         floors.forEach(f => {
           f.receiveShadow = true;
           f.castShadow = false;
           if (f.material) {
-            if (Array.isArray(f.material)) f.material.forEach(m=>{ if (m){ m.side = THREE.DoubleSide; m.needsUpdate = true; } });
-            else { f.material.side = THREE.DoubleSide; f.material.needsUpdate = true; }
+            if (Array.isArray(f.material)) {
+              f.material.forEach(m=>{ if (m){ m.side = (m.side !== undefined) ? m.side : THREE.DoubleSide; m.needsUpdate = true; }});
+            } else {
+              f.material.side = (f.material.side !== undefined) ? f.material.side : THREE.DoubleSide;
+              f.material.needsUpdate = true;
+            }
           }
           fixes.push({type:'floorMarked', mesh: f.name || f.id});
         });
 
-        console.log('[fix] issues found/fixed for', el.id, fixes.length? fixes : 'none');
+        console.log('[fix] issues found/fixed for', el.id, fixes.length ? fixes : 'none');
       } catch(e){
         console.warn('[fix] model inspect failed for', el.id, e);
       }
-    });
+    }
+
+    // Listener solo una vez
+    el.addEventListener('model-loaded', onModelLoaded, { once: true });
+
+    // Si el objeto ya está presente, dispara inspección inmediata (sin duplicar listener por el once)
     const maybe = el.getObject3D('mesh') || el.getObject3D('model');
     if (maybe) el.emit('model-loaded', { model: maybe }, false);
   }
 
+  // Mejora parámetros de sombras de la lámpara sin tocar su posición/intensidad.
+  // Espera object3dset para asegurar que el light exista.
   function enhanceLampShadows(lampId){
     const el = document.getElementById(lampId);
     if (!el) return;
-    setTimeout(()=>{
+
+    el.addEventListener('object3dset', function handler(){
       const light = el.getObject3D && el.getObject3D('light');
-      if (!light) return console.warn('Light object not found for', lampId);
+      if (!light) return console.warn('[fix] Light object not found for', lampId);
       light.castShadow = true;
+
       if (light.shadow) {
         const maxAllowed = (sceneEl.renderer && sceneEl.renderer.capabilities && sceneEl.renderer.capabilities.maxTextureSize) || SHADOW_MAP_SIZE;
         const ms = Math.min(SHADOW_MAP_SIZE, maxAllowed);
+
+        // Dispose del shadow map existente para evitar fugas GPU antes de cambiar tamaño
+        try { if (light.shadow.map) { light.shadow.map.dispose(); light.shadow.map = null; } } catch(e){}
+
         light.shadow.mapSize.width = ms;
         light.shadow.mapSize.height = ms;
-        light.shadow.bias = SHADOW_BIAS;
-        if ('normalBias' in light) light.normalBias = SHADOW_NORMAL_BIAS;
-        if ('radius' in light.shadow) light.shadow.radius = 2.5;
+        if ('bias' in light.shadow) light.shadow.bias = SHADOW_BIAS;
+        // normalBias suele estar en shadow (Three r125+); intenta colocarlo donde exista
+        if (light.shadow.normalBias !== undefined) light.shadow.normalBias = SHADOW_NORMAL_BIAS;
+        else if (light.normalBias !== undefined) light.normalBias = SHADOW_NORMAL_BIAS;
+
+        if (light.shadow.radius !== undefined) light.shadow.radius = 2.5;
+
+        // Ajustes genéricos de cámara de sombra si están presentes (funciona para directional/spot)
         if (light.shadow.camera && light.shadow.camera.updateProjectionMatrix) {
           light.shadow.camera.near = 0.1;
           light.shadow.camera.far = 200;
@@ -234,26 +321,31 @@
         }
       }
       console.log('[fix] lamp shadow params applied for', lampId);
-    }, 250);
+    }, { once: true });
   }
 
+  // Aplica inspección a cada entidad con gltf-model
   const nodes = sceneEl.querySelectorAll('[gltf-model]');
   nodes.forEach(n => inspectAndFixModel(n));
+
+  // Mejora sombras de la lámpara (no se cambia pos/intensity)
   enhanceLampShadows('greenLamp');
 
+  // Herramientas de debug útiles y seguras
   window.__aframe_debug = {
     toggleWireframe: function(state){
       sceneEl.object3D.traverse(node=>{
         if (node.isMesh && node.material){
-          const mats = Array.isArray(node.material)?node.material:[node.material];
+          const mats = Array.isArray(node.material) ? node.material : [node.material];
           mats.forEach(m=>{ if (m){ m.wireframe = (state===undefined) ? !m.wireframe : !!state; m.needsUpdate=true; } });
         }
       });
     },
     onlyAmbient: function(on){
       sceneEl.object3D.traverse(node=>{
+        // visibilidad de luces no-Ambient
         if (node.isLight && node.type !== 'AmbientLight'){
-          node.visible = !on ? true : false;
+          node.visible = on ? false : true;
         }
       });
       console.log('[debug] onlyAmbient=', !!on);
