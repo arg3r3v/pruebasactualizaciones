@@ -5,6 +5,19 @@
     <title>Escena A-Frame Realista</title>
     <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.controls.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+
+    <style>
+      html, body { height:100%; margin:0; background:#000; touch-action: none; -ms-touch-action: none; }
+      a-scene { width:100%; height:100vh; display:block; }
+      /* botón opcional para lock pointer en desktop (visible solo si hace falta) */
+      #lockBtn {
+        position: absolute; right: 18px; top: 18px;
+        z-index: 9999; padding: 8px 12px; background: rgba(255,255,255,0.06); color:#fff; border-radius:6px; font-family: sans-serif;
+        font-size:14px; cursor:pointer;
+      }
+    </style>
+    
   </head>
   <body>
     <a-scene shadow="type: pcfsoft" 
@@ -53,12 +66,12 @@
       <a-entity id="cuarto7_ent" gltf-model="#cuarto7" shadow="cast: true; receive: true"></a-entity>
 
       <!-- Cámara y controles -->
-      <a-entity id="cameraRig" movement-controls="fly: false; speed: 0.1">
-      <a-entity 
-      camera 
-      position="0 1.5 0" 
-      look-controls="pointerLockEnabled: true; touchEnabled: true">
-      </a-entity>
+      <a-entity id="cameraRig"
+                movement-controls="controls: keyboard,gamepad,trackpad; fly: false; speed: 0.12"
+                mobile-joystick>
+        <a-entity camera
+                  position="0 1.5 0"
+                  look-controls="pointerLockEnabled: true; touchEnabled: true; reverseTouchDrag: false"></a-entity>
       </a-entity>
 
     <script>
@@ -80,6 +93,135 @@
         const rig = document.querySelector('#cameraRig');
         rig.object3D.position.set(center.x, center.y, center.z);
       });
+
+      // -----------------------
+      // 2) mobile-joystick component: usa nipplejs si estamos en dispositivo táctil
+      //    mueve el cameraRig directamente (fallback robusto)
+      // -----------------------
+      AFRAME.registerComponent('mobile-joystick', {
+        schema: {
+          speed: { type: 'number', default: 0.12 } // metros/segundo
+        },
+        init: function() {
+          this.rig = this.el;
+          this.vx = 0;
+          this.vz = 0;
+          this.active = false;
+          this.nipple = null;
+          this.lastTime = null;
+
+          // activarse sólo en dispositivos táctiles
+          this.isTouch = (('ontouchstart' in window) || navigator.maxTouchPoints > 0 || (window.matchMedia && window.matchMedia('(pointer:coarse)').matches));
+
+          if (!this.isTouch) {
+            // mostrar botón de lock para desktop si quieres
+            const lb = document.getElementById('lockBtn');
+            if (lb) { lb.style.display = 'block'; lb.onclick = () => { document.body.requestPointerLock && document.body.requestPointerLock(); }; }
+            return;
+          }
+
+          // crear contenedor joystick en DOM
+          this.zone = document.createElement('div');
+          this.zone.style.position = 'absolute';
+          this.zone.style.left = '14px';
+          this.zone.style.bottom = '14px';
+          this.zone.style.width = '44%';
+          this.zone.style.height = '44%';
+          this.zone.style.maxWidth = '420px';
+          this.zone.style.maxHeight = '420px';
+          this.zone.style.zIndex = '9999';
+          this.zone.style.touchAction = 'none';
+          document.body.appendChild(this.zone);
+
+          // crear joystick con nipplejs
+          try {
+            this.nipple = nipplejs.create({
+              zone: this.zone,
+              mode: 'dynamic',
+              color: '#fff',
+              size: 120,
+              restOpacity: 0.25,
+              lockX: false,
+              lockY: false
+            });
+
+            this.nipple.on('start', (evt, data) => {
+              this.active = true;
+              this.lastTime = performance.now();
+            });
+
+            this.nipple.on('end', (evt, data) => {
+              this.active = false;
+              this.vx = 0; this.vz = 0;
+            });
+
+            this.nipple.on('move', (evt, data) => {
+              if (!data || !data.vector) return;
+              // nipplejs vector: x,y in -1..1
+              // mapear joystick a forward/right del rig (en rig local space)
+              const nx = data.vector.x || 0; // derecha +
+              const ny = data.vector.y || 0; // arriba +
+              // invertimos ny para que empuje hacia adelante con el dedo hacia arriba
+              this.jx = nx;
+              this.jy = -ny;
+            });
+
+          } catch (e) {
+            console.warn('nipplejs fallo:', e);
+          }
+        },
+
+        tick: function(time, delta) {
+          if (!this.isTouch) return; // solo para móvil
+          const dt = (delta || 16) / 1000;
+          if (!this.active && (!this.jx && !this.jy)) return;
+
+          // si no hay joystick, nothing
+          const jx = this.jx || 0;
+          const jy = this.jy || 0;
+          if (Math.abs(jx) < 0.01 && Math.abs(jy) < 0.01) return;
+
+          // convertir joystick a movimiento en rig local space (usando la orientación de la cámara)
+          const cam = this.rig.querySelector('[camera]');
+          let yaw = 0;
+          if (cam && cam.object3D) {
+            const q = cam.object3D.quaternion;
+            const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
+            yaw = e.y;
+          } else {
+            yaw = this.rig.object3D.rotation.y;
+          }
+
+          const dir = new THREE.Vector3(jx, 0, jy).normalize();
+          const yawQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0));
+          dir.applyQuaternion(yawQ);
+
+          // aplicar movimiento
+          const move = dir.multiplyScalar(this.data.speed * dt);
+          this.rig.object3D.position.x += move.x;
+          this.rig.object3D.position.z += move.z;
+        },
+
+        remove: function() {
+          if (this.nipple) { this.nipple.destroy(); this.nipple = null; }
+          if (this.zone && this.zone.parentNode) this.zone.parentNode.removeChild(this.zone);
+        }
+      });
+
+
+      // -----------------------
+      // 3) pequeña ayuda: si movement-controls no se inicializó bien, avisar en consola
+      // -----------------------
+      (function(){
+        const rig = document.getElementById('cameraRig');
+        setTimeout(()=> {
+          if (rig && !rig.components['movement-controls']) {
+            console.warn('movement-controls component no disponible en cameraRig — revisa que aframe-extras se haya cargado correctamente.');
+          } else {
+            console.log('movement-controls OK:', !!(rig && rig.components['movement-controls']));
+          }
+        }, 1200);
+      })();
     </script>
   </body>
 </html>
