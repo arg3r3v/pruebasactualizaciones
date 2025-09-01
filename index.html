@@ -61,12 +61,16 @@
   const SHADOW_BIAS = -0.0004;
   const SHADOW_NORMAL_BIAS = 0.02;
 
-  function isPowerOfTwo(v){ return Number.isInteger(v) && (v & (v - 1)) === 0; }
+  function isPowerOfTwo(v){ return Number.isInteger(v) && v > 0 && (v & (v - 1)) === 0; }
   function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
+
+  // ---------- FIX CRÍTICO ----------
+  // Solo los mapas de color/emissive/alpha deben usar sRGB.
+  // AO, lightMap, normalMap, roughnessMap, metalnessMap => LinearEncoding
   function preferSRGBForKey(key){
-    const col = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
-    return col.indexOf(key) !== -1;
+    return (key === 'map' || key === 'emissiveMap' || key === 'alphaMap');
   }
+  // ----------------------------------
 
   sceneEl.addEventListener('render-target-loaded', () => {
     try {
@@ -113,8 +117,12 @@
     const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
     const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
 
-    try { tex.encoding = preferSRGBForKey(key) && THREE && THREE.sRGBEncoding ? THREE.sRGBEncoding : THREE.LinearEncoding; } catch(e){}
+    // Usa preferSRGBForKey para decidir encoding: CORRECCIÓN aplicada aquí
+    try { 
+      tex.encoding = preferSRGBForKey(key) && THREE && THREE.sRGBEncoding ? THREE.sRGBEncoding : THREE.LinearEncoding; 
+    } catch(e){}
 
+    // Si es aoMap o lightMap y no hay uv2 -> no tocarlo/avisar (mejor quitar que dejar mal)
     if ((key === 'aoMap' || key === 'lightMap') && mesh && mesh.geometry && !mesh.geometry.attributes.uv2) {
       return {ok:false, reason:'missing-uv2'};
     }
@@ -145,6 +153,7 @@
           newTex.anisotropy = maxAniso;
         } catch(e){ newTex.anisotropy = 1; }
 
+        // Preservar wrap/flipY/premultiply/format cuando sea posible
         newTex.wrapS = tex.wrapS || THREE.ClampToEdgeWrapping;
         newTex.wrapT = tex.wrapT || THREE.ClampToEdgeWrapping;
         if (tex.flipY !== undefined) newTex.flipY = tex.flipY;
@@ -159,6 +168,7 @@
       }
     }
 
+    // textura ya ok
     tex.generateMipmaps = true;
     tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
     tex.magFilter = tex.magFilter || THREE.LinearFilter;
@@ -191,61 +201,47 @@
         if (!root) return;
         const fixes = [];
 
-        // detecta candidate(s) de floor/room (mayores áreas)
+        // detect floor candidates
         const floorCandidates = detectFloorCandidates(root);
         const floorSet = new Set(floorCandidates);
 
         root.traverse(node => {
           if (!node.isMesh) return;
 
-          // si no tiene normales, calcula
           if (node.geometry && !node.geometry.attributes.normal) {
             node.geometry.computeVertexNormals();
             fixes.push({type:'computedNormals', mesh: node.name || node.id});
           }
 
-          // MATERIALS: aseguramos trabajar sobre clones en caso de meshes "room"
-          // esto permite aplicar DoubleSide sin afectar a materiales compartidos
+          // materiales (posible clonación si es "room")
           let nodeMaterials = Array.isArray(node.material) ? node.material.slice() : [node.material];
-
-          // si el nodo es un floorCandidate (o es muy grande) forzamos clonación de sus materiales
-          // para poder ajustar side/depthWrite/transparent sin afectar otras mallas
           let treatAsRoom = floorSet.has(node);
 
-          // heurística alternativa: si el mesh es significativamente grande (volumen/area), marcarlo
           if (!treatAsRoom) {
             try {
               const bb = new THREE.Box3().setFromObject(node);
               const s = new THREE.Vector3(); bb.getSize(s);
               const area = Math.abs(s.x * s.z);
-              if (area > 1.5) { // umbral heurístico — ajusta si tu escena usa otras unidades
-                treatAsRoom = true;
-              }
+              if (area > 1.5) treatAsRoom = true;
             } catch(e){}
           }
 
           if (treatAsRoom) {
-            // clonamos materiales si están compartidos
             nodeMaterials = nodeMaterials.map(mat => {
               if (!mat) return mat;
               try {
-                const cloned = mat.clone ? mat.clone() : Object.assign(Object.create(Object.getPrototypeOf(mat)), mat);
-                // reemplazamos en la malla (array o único)
-                return cloned;
+                return mat.clone ? mat.clone() : Object.assign(Object.create(Object.getPrototypeOf(mat)), mat);
               } catch(e){
                 return mat;
               }
             });
-            // asignar de nuevo los materiales clonados
             node.material = Array.isArray(node.material) ? nodeMaterials : nodeMaterials[0];
             fixes.push({type:'clonedMatsForRoom', mesh: node.name || node.id});
           }
 
-          // ahora tratamos cada material (promoción, texturas, flags)
           nodeMaterials.forEach((mat, idx) => {
             if (!mat) return;
 
-            // Promocionar si material antiguo
             if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
               const promoted = promoteToStandard(mat);
               if (promoted) {
@@ -256,7 +252,6 @@
               }
             }
 
-            // comprobar y arreglar mapas de texturas
             ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap','alphaMap'].forEach(k => {
               if (node.material && node.material[k]) {
                 const res = ensureTextureGood(node.material[k], k, renderer, node);
@@ -266,7 +261,6 @@
                   node.material.needsUpdate = true;
                   fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
                 } else if (!res.ok) {
-                  // si falta uv2 en ao/light map, quitamos el map para evitar manchas negras
                   if (res.reason === 'missing-uv2') {
                     node.material[k] = null;
                     node.material.needsUpdate = true;
@@ -278,13 +272,11 @@
               }
             });
 
-            // flags seguros: si opacity ~1, desactivar transparent y asegurar depthWrite
             try {
               if (mat.opacity !== undefined && mat.opacity >= 0.999) {
                 if (mat.transparent) { mat.transparent = false; fixes.push({type:'transparentDisabled', mesh: node.name || node.id}); }
                 if (mat.depthWrite === false) { mat.depthWrite = true; fixes.push({type:'depthWriteEnabled', mesh: node.name || node.id}); }
               } else {
-                // si hay transparencia real, poner alphaTest razonable
                 if (mat.transparent) {
                   if (mat.alphaTest === undefined || mat.alphaTest > 0.05) {
                     const old = mat.alphaTest || 0;
@@ -295,7 +287,6 @@
               }
             } catch(e){}
 
-            // polygonOffset para evitar z-fighting/sombras flotadas, sin tocar side
             try {
               if (!mat.polygonOffset) {
                 mat.polygonOffset = true;
@@ -305,11 +296,9 @@
               }
             } catch(e){}
 
-            // Si tratamos la malla como room forzamos cara doble en el material CLONADO (no tocamos materiales compartidos)
             if (treatAsRoom) {
               try {
                 mat.side = THREE.DoubleSide;
-                // si opacity es ~1, asegurarse depthWrite y transparent off
                 if (mat.opacity !== undefined && mat.opacity >= 0.999) {
                   mat.transparent = false;
                   mat.depthWrite = true;
@@ -320,7 +309,6 @@
             }
           });
 
-          // sombras por defecto (a menos que userData diga lo contrario)
           if (!(node.userData && node.userData.noShadow)) {
             node.castShadow = true;
             node.receiveShadow = true;
@@ -368,7 +356,7 @@
     }, { once: true });
   }
 
-  // aplica a todos los gltf-model de la escena
+  // run on all models
   const nodes = sceneEl.querySelectorAll('[gltf-model]');
   nodes.forEach(n => inspectAndFixModel(n));
   enhanceLampShadows('greenLamp');
