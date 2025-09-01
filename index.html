@@ -47,7 +47,6 @@
       <a-entity camera position="0 4.05 0" look-controls="pointerLockEnabled:true"><a-cursor></a-cursor></a-entity>
     </a-entity>
   </a-scene>
-
 <script>
 (function(){
   const sceneEl = document.getElementById('scene');
@@ -66,6 +65,26 @@
     return col.indexOf(key) !== -1;
   }
 
+  // Detectar alpha en una imagen (best-effort). Devuelve true/false.
+  function imageHasAlpha(img) {
+    try {
+      const w = Math.max(4, Math.min(64, img.width || img.naturalWidth || 16));
+      const h = Math.max(4, Math.min(64, img.height || img.naturalHeight || 16));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0,0,w,h).data;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] < 255) return true;
+      }
+      return false;
+    } catch (e) {
+      // cross-origin images may throw; assume false then
+      return false;
+    }
+  }
+
   sceneEl.addEventListener('render-target-loaded', () => {
     try {
       const renderer = sceneEl.renderer;
@@ -78,15 +97,22 @@
     } catch(e){ console.warn('[fix] renderer config failed', e); }
   });
 
+  // Promover material -> Mantener propiedades alpha importantes
   function promoteToStandard(oldMat, renderer){
     if (!oldMat) return null;
     if (oldMat.isMeshStandardMaterial) return oldMat;
     const newMat = new THREE.MeshStandardMaterial();
-    ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap'].forEach(k=>{
+    ['map','alphaMap','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap'].forEach(k=>{
       if (oldMat[k]) newMat[k] = oldMat[k];
     });
+    // copia colores
     if (oldMat.color) newMat.color.copy(oldMat.color);
     if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
+    // copiar propiedades alpha/opacity si existen
+    if (oldMat.opacity !== undefined) newMat.opacity = oldMat.opacity;
+    if (oldMat.transparent !== undefined) newMat.transparent = oldMat.transparent;
+    if (oldMat.alphaTest !== undefined) newMat.alphaTest = oldMat.alphaTest;
+    // defaults
     newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : 1.0;
     newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : 0.0;
     newMat.side = THREE.DoubleSide;
@@ -94,13 +120,19 @@
     return newMat;
   }
 
+  // Ensure texture good and preserve alpha if present; devuelve {ok, replaced, newTex, hasAlpha}
   function ensureTextureGood(tex, key, renderer){
     if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
     const img = tex.image;
     const w = img.width || img.naturalWidth || img.bitmapWidth || 0;
     const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
     const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
-    try { tex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding; } catch(e){}
+    const wantSRGB = preferSRGBForKey(key);
+
+    // Try to detect alpha on source
+    const srcHasAlpha = imageHasAlpha(img);
+
+    // If texture is small or not POT -> upscale via canvas but preserve alpha
     if (!isPOT || Math.max(w,h) < TARGET_MIN_TEX) {
       try {
         const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
@@ -111,30 +143,53 @@
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
+        // preserve aspect
         const aspect = (w && h) ? (w/h) : 1;
         let dw = target, dh = target;
         if (aspect > 1) dh = Math.round(target / aspect); else dw = Math.round(target * aspect);
         const ox = Math.round((target-dw)/2), oy = Math.round((target-dh)/2);
+        // clear to transparent to preserve alpha
+        ctx.clearRect(0,0,target,target);
         ctx.drawImage(img, ox, oy, dw, dh);
         const newTex = new THREE.CanvasTexture(canvas);
+        newTex.format = THREE.RGBAFormat;
+        newTex.premultiplyAlpha = true;
         newTex.generateMipmaps = true;
         newTex.minFilter = THREE.LinearMipmapLinearFilter;
         newTex.magFilter = THREE.LinearFilter;
         try { newTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch(e){}
         newTex.wrapS = newTex.wrapT = THREE.RepeatWrapping;
-        newTex.encoding = preferSRGBForKey(key) ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        newTex.encoding = wantSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
         newTex.needsUpdate = true;
-        return {ok:true, replaced:true, newTex};
+        // detect alpha from the canvas copy (safer)
+        const hasAlpha = srcHasAlpha || (function(){
+          try {
+            const data = ctx.getImageData(0,0,Math.min(16,target),Math.min(16,target)).data;
+            for (let i=3;i<data.length;i+=4) if (data[i] < 255) return true;
+          } catch(e){}
+          return false;
+        })();
+        return {ok:true, replaced:true, newTex, hasAlpha};
       } catch(e){
         return {ok:false, reason:'canvas-resize-failed', err:e};
       }
     }
-    tex.generateMipmaps = true;
-    tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
-    tex.magFilter = tex.magFilter || THREE.LinearFilter;
-    try { tex.anisotropy = tex.anisotropy || (renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
-    tex.needsUpdate = true;
-    return {ok:true, replaced:false, info:{w,h,isPOT}};
+
+    // otherwise keep original tex but ensure settings, try to mark format/encoding and check alpha
+    try {
+      tex.generateMipmaps = true;
+      tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
+      tex.magFilter = tex.magFilter || THREE.LinearFilter;
+      try { tex.anisotropy = tex.anisotropy || (renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
+      tex.encoding = wantSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
+      // ensure format if we detected alpha
+      const hasAlpha = srcHasAlpha;
+      if (hasAlpha) { try { tex.format = THREE.RGBAFormat; tex.premultiplyAlpha = true; } catch(e){} }
+      tex.needsUpdate = true;
+      return {ok:true, replaced:false, info:{w,h,isPOT}, hasAlpha};
+    } catch(e){
+      return {ok:false, reason:'tex-fail', err:e};
+    }
   }
 
   function detectFloorCandidates(root){
@@ -151,6 +206,7 @@
     return areaArr.slice(0,1).map(x=>x.m);
   }
 
+  // Inspeccionar y aplicar fixes; maneja alpha correctamente
   function inspectAndFixModel(el){
     const renderer = sceneEl.renderer;
     if (!el) return;
@@ -160,38 +216,71 @@
         const fixes = [];
         root.traverse(node => {
           if (!node.isMesh) return;
+          // normals
           if (node.geometry && !node.geometry.attributes.normal) {
             node.geometry.computeVertexNormals();
             fixes.push({type:'computedNormals', mesh: node.name || node.id});
           }
+          // materials
           const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
           mats.forEach((mat, idx) => {
             if (!mat) return;
+            // store alpha props before promoting
+            const originalAlpha = { transparent: !!mat.transparent, alphaTest: mat.alphaTest || 0, opacity: mat.opacity !== undefined ? mat.opacity : 1.0 };
+            // promote if needed
             if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
               const promoted = promoteToStandard(mat, renderer);
               if (promoted) {
                 if (Array.isArray(node.material)) node.material[idx] = promoted;
                 else node.material = promoted;
+                mat = (Array.isArray(node.material) ? node.material[idx] : node.material);
                 fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
               }
             }
-            ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap'].forEach(k => {
-              if (node.material && node.material[k]) {
-                const res = ensureTextureGood(node.material[k], k, renderer);
+            // check textures
+            ['map','alphaMap','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap'].forEach(k => {
+              if (mat && mat[k]) {
+                const res = ensureTextureGood(mat[k], k, renderer);
                 if (res.ok && res.replaced && res.newTex) {
-                  node.material[k] = res.newTex;
-                  node.material.needsUpdate = true;
-                  fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
+                  mat[k] = res.newTex;
+                  mat.needsUpdate = true;
+                  fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`, hasAlpha: !!res.hasAlpha});
+                  // alpha handling
+                  const hasAlpha = !!res.hasAlpha;
+                  if (hasAlpha) {
+                    // if original material used alphaTest, keep masked behavior; else enable transparency blended but disable depthWrite to avoid sorting issues
+                    if (originalAlpha.alphaTest > 0) {
+                      mat.alphaTest = originalAlpha.alphaTest;
+                      mat.transparent = false;
+                      mat.depthWrite = true;
+                    } else {
+                      mat.transparent = true;
+                      mat.alphaTest = 0.5; // conservative cutout fallback
+                      mat.depthWrite = false;
+                    }
+                    mat.needsUpdate = true;
+                  }
+                } else if (res.ok && !res.replaced) {
+                  // texture ok, but may have alpha flag
+                  if (res.hasAlpha) {
+                    mat.transparent = true;
+                    mat.alphaTest = mat.alphaTest || 0.5;
+                    mat.depthWrite = false;
+                    mat.needsUpdate = true;
+                    fixes.push({type:'textureHasAlpha', mesh: node.name || node.id, key:k});
+                  }
                 } else if (!res.ok) {
                   fixes.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: res.reason || ''});
                 }
               }
             });
           });
+          // shadows
           node.castShadow = true;
           node.receiveShadow = true;
         });
 
+        // mark floors
         const floors = detectFloorCandidates(root);
         floors.forEach(f => {
           f.receiveShadow = true;
@@ -208,6 +297,7 @@
         console.warn('[fix] model inspect failed for', el.id, e);
       }
     });
+
     const maybe = el.getObject3D('mesh') || el.getObject3D('model');
     if (maybe) el.emit('model-loaded', { model: maybe }, false);
   }
@@ -217,7 +307,7 @@
     if (!el) return;
     setTimeout(()=>{
       const light = el.getObject3D && el.getObject3D('light');
-      if (!light) return console.warn('Light object not found for', lampId);
+      if (!light) return;
       light.castShadow = true;
       if (light.shadow) {
         const maxAllowed = (sceneEl.renderer && sceneEl.renderer.capabilities && sceneEl.renderer.capabilities.maxTextureSize) || SHADOW_MAP_SIZE;
@@ -237,10 +327,12 @@
     }, 250);
   }
 
+  // run
   const nodes = sceneEl.querySelectorAll('[gltf-model]');
   nodes.forEach(n => inspectAndFixModel(n));
   enhanceLampShadows('greenLamp');
 
+  // debug helpers
   window.__aframe_debug = {
     toggleWireframe: function(state){
       sceneEl.object3D.traverse(node=>{
@@ -269,5 +361,6 @@
   console.log('[fix] Diagnostics loaded — usa __aframe_debug.* en la consola.');
 })();
 </script>
+
 </body>
 </html>
