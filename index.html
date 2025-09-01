@@ -3,34 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>A-Frame escena (v1.6.0) - Cuarto con GLB (ajustes)</title>
+  <title>A-Frame escena (v1.6.0) - Cámara centrada y sombras mejoradas</title>
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <style>
     html, body { margin: 0; height: 100%; background: #000; }
     a-scene { width: 100%; height: 100vh; display: block; }
-    #note {
-      position: absolute;
-      left: 8px;
-      bottom: 8px;
-      z-index: 9999;
-      font-family: sans-serif;
-      font-size: 12px;
-      color: #ddd;
-      background: rgba(0,0,0,0.35);
-      padding: 6px 8px;
-      border-radius: 6px;
-      pointer-events: none;
-    }
   </style>
 </head>
 <body>
-  <div id="note">Cámara centrada (medio del cuarto 3m x 3m) — sombras triplicadas</div>
+  <a-scene background="color: #000" renderer="colorManagement: true" embedded>
 
-  <a-scene background="color: #000" vr-mode-ui="enabled: true" embedded
-           renderer="colorManagement: true"
-           loading-screen="enabled: true">
-
-    <!-- Assets (rutas EXACTAS según lo solicitado) -->
+    <!-- Assets -->
     <a-assets timeout="0">
       <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
       <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
@@ -45,29 +28,18 @@
       <a-asset-item id="assets7" src="models/assets7.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Luz puntual verde en el centro — NO mover la luz en el código -->
+    <!-- Luz puntual verde -->
     <a-entity id="greenLamp"
               position="0 1 0"
-              light="type: point; color: #2bff7a; intensity: 1.6; distance: 12; decay: 2; castShadow: true"
-              shadow="cast: true; receive: false">
+              light="type: point; color: #2bff7a; intensity: 1.6; distance: 12; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- Rig centrado en el medio del cuarto.
-         Las paredes miden 3 m; por tanto colocamos la cámara en el centro: (1.5, 0, 1.5).
-         Cámara a altura humana y=1.6 -->
-    <a-entity id="rig" position="1.5 0 1.5" wasd-controls="acceleration: 30">
-      <a-entity id="head" position="0 1.6 0">
-        <a-camera id="camera"
-                  look-controls="pointerLockEnabled: false; touchEnabled: true"
-                  fov="75"
-                  near="0.01"
-                  far="1000">
-          <a-cursor id="cursor" fuse="false" rayOrigin="mouse" visible="false"></a-cursor>
-        </a-camera>
-      </a-entity>
+    <!-- Cámara centrada en el cuarto (1.5,1.6,1.5) -->
+    <a-entity id="rig" position="1.5 1.6 1.5" wasd-controls="acceleration: 30">
+      <a-camera look-controls="pointerLockEnabled: false; touchEnabled: true"></a-camera>
     </a-entity>
 
-    <!-- Cada GLB cargado en su propia entidad (sin alterar transformaciones internas) -->
+    <!-- Modelos GLB -->
     <a-entity id="techo-entity"    gltf-model="#techo"    shadow="cast: true; receive: true"></a-entity>
     <a-entity id="piso-entity"     gltf-model="#piso"     shadow="cast: true; receive: true"></a-entity>
     <a-entity id="paredes-entity"  gltf-model="#paredes"  shadow="cast: true; receive: true"></a-entity>
@@ -80,117 +52,57 @@
     <a-entity id="asset6-entity" gltf-model="#assets6" shadow="cast: true; receive: true"></a-entity>
     <a-entity id="asset7-entity" gltf-model="#assets7" shadow="cast: true; receive: true"></a-entity>
 
-    <!-- Plano receptor de sombras en el piso — visible para verificar sombras -->
-    <a-plane id="shadow-receiver" position="1.5 0 1.5" rotation="-90 0 0" width="3" height="3" visible="true" recieve-shadow></a-plane>
-
-    <!-- Script: configurar renderer (shadow maps triplicados) y reducir ruido en sombras -->
     <script>
       (function () {
         const scene = document.querySelector('a-scene');
 
         function isMobile() {
-          try {
-            return window.matchMedia && window.matchMedia('(pointer: coarse)').matches
-                   || 'ontouchstart' in window
-                   || navigator.maxTouchPoints > 0;
-          } catch (e) { return false; }
+          return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+                 || 'ontouchstart' in window
+                 || navigator.maxTouchPoints > 0;
         }
 
         scene.addEventListener('render-target-loaded', function () {
           const renderer = scene.renderer;
-          if (!renderer) { return; }
+          if (!renderer) return;
 
-          // Activar shadow map y tipo suave
           renderer.shadowMap.enabled = true;
           renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-          // Encoding sRGB para materiales
           renderer.outputEncoding = THREE.sRGBEncoding;
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-          // Ajuste de pixel ratio (limitar para balance rendimiento/ruido)
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-
-          // Opciones para mejorar calidad/ruido
-          try {
-            renderer.physicallyCorrectLights = true;
-            // Tone mapping ayuda a evitar clipping y puede mejorar sensación de ruido en altas luces
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.0;
-          } catch (e) { /* no crítico si no existe */ }
-
-          // Obtener la luz puntual
-          const greenLampEl = document.getElementById('greenLamp');
-          let lightObj = null;
-          if (greenLampEl) {
-            lightObj = greenLampEl.getObject3D && greenLampEl.getObject3D('light');
+          const greenLamp = document.getElementById('greenLamp').getObject3D('light');
+          if (greenLamp && greenLamp.shadow) {
+            greenLamp.castShadow = true;
+            const size = isMobile() ? 2048 : 4096;
+            greenLamp.shadow.mapSize.set(size, size);
+            greenLamp.shadow.bias = -0.0003;
+            greenLamp.shadow.radius = 6; // suavizado extra
+            greenLamp.shadow.needsUpdate = true;
           }
 
-          const mobile = isMobile();
-
-          // Valores base anteriores: desktop 2048, mobile 1024.
-          // El usuario pidió TRIPLICAR los shadow maps → multiplicar por 3.
-          const baseDesktop = 2048;
-          const baseMobile  = 1024;
-          const chosenSize = mobile ? baseMobile * 3 : baseDesktop * 3; // 3072 móvil, 6144 desktop
-
-          if (lightObj && lightObj.shadow) {
-            try {
-              lightObj.castShadow = true;
-              // Ajustar mapSize para mejores sombras (triplicado)
-              if (lightObj.shadow.mapSize && typeof lightObj.shadow.mapSize.set === 'function') {
-                lightObj.shadow.mapSize.set(chosenSize, chosenSize);
-                lightObj.shadow.needsUpdate = true;
-              }
-              // Ajustar radius para suavizar artefactos (reduce banding/ruido en sombras)
-              if (typeof lightObj.shadow.radius !== 'undefined') {
-                lightObj.shadow.radius = 4;
-              }
-              // Aumentar bias ligeramente para prevenir acne de sombras en escenas con muchos polígonos
-              if (typeof lightObj.shadow.bias !== 'undefined') {
-                lightObj.shadow.bias = -0.0005;
-              }
-            } catch (err) {
-              console.warn('No se pudo ajustar completamente lightObj.shadow:', err);
-            }
-          }
-
-          // Habilitar cast/receive shadows en mallas glTF al cargarse y mejorar encoding de texturas
-          const gltfEntities = [
+          // Forzar cast/receive shadows en modelos GLTF
+          const ents = [
             'techo-entity','piso-entity','paredes-entity',
-            'asset1-entity','asset2-entity','asset3-entity','asset4-entity','asset5-entity','asset6-entity','asset7-entity'
-          ].map(id => document.getElementById(id)).filter(Boolean);
-
-          gltfEntities.forEach(function (el) {
-            el.addEventListener('model-loaded', function (evt) {
-              const model = (evt.detail && evt.detail.model) ? evt.detail.model : el.getObject3D('gltf') || el.getObject3D('mesh');
-              const obj = model || el.getObject3D('mesh') || el.getObject3D('gltf');
-              if (obj) {
-                obj.traverse(function (node) {
-                  if (node.isMesh) {
-                    node.castShadow = true;
-                    node.receiveShadow = true;
-                    if (node.material) {
-                      // Forzar encoding de texturas a sRGB si aplicable para reducir incorrecta luminancia que puede generar ruido
-                      if (node.material.map) {
-                        node.material.map.encoding = THREE.sRGBEncoding;
-                      }
-                      node.material.needsUpdate = true;
-                    }
+            'asset1-entity','asset2-entity','asset3-entity',
+            'asset4-entity','asset5-entity','asset6-entity','asset7-entity'
+          ];
+          ents.forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('model-loaded', e => {
+              e.detail.model.traverse(node => {
+                if (node.isMesh) {
+                  node.castShadow = true;
+                  node.receiveShadow = true;
+                  if (node.material && node.material.map) {
+                    node.material.map.encoding = THREE.sRGBEncoding;
+                    node.material.needsUpdate = true;
                   }
-                });
-              }
-            }, { once: false });
+                }
+              });
+            });
           });
-
-          // Consola informativa
-          console.log('Renderer configurado: shadowMap.enabled=', renderer.shadowMap.enabled,
-                      ' type=', renderer.shadowMap.type,
-                      ' pixelRatio=', renderer.getPixelRatio ? renderer.getPixelRatio() : (window.devicePixelRatio || 1),
-                      ' shadowMapSize=', chosenSize,
-                      ' mobile=', mobile);
         });
-
-        // No más cambios a transformaciones internas de los GLB.
       })();
     </script>
 
