@@ -11,6 +11,8 @@
   <style>
     html,body{height:100%;margin:0;background:#000}
     a-scene{height:100vh;width:100vw}
+    /* pequeño HUD para ver logs si quieres */
+    #af-debug { position:fixed; right:8px; bottom:8px; font:12px/1.2 monospace; color:#0f0; background: rgba(0,0,0,0.35); padding:8px; border-radius:6px; z-index:9999; max-width:320px; }
   </style>
 </head>
 <body>
@@ -49,11 +51,16 @@
     </a-entity>
   </a-scene>
 
+  <div id="af-debug" style="display:none;">debug</div>
+
 <script>
 (function(){
+  const debugEl = document.getElementById('af-debug');
+  function dbg(...args){ try { console.log(...args); if (debugEl) { debugEl.style.display='block'; debugEl.textContent = args.map(a=> (typeof a==='object'? JSON.stringify(a): String(a))).join(' '); } } catch(e){} }
+
   const THREE = (window.AFRAME && AFRAME.THREE) ? AFRAME.THREE : window.THREE;
   const sceneEl = document.getElementById('scene');
-  if (!sceneEl) return;
+  if (!sceneEl) { console.warn('No scene'); return; }
 
   const TARGET_MIN_TEX = 1024;
   const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 2);
@@ -64,14 +71,12 @@
   function isPowerOfTwo(v){ return Number.isInteger(v) && v > 0 && (v & (v - 1)) === 0; }
   function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
 
-  // ---------- FIX CRÍTICO ----------
-  // Solo los mapas de color/emissive/alpha deben usar sRGB.
-  // AO, lightMap, normalMap, roughnessMap, metalnessMap => LinearEncoding
+  // CORRECCIÓN CRÍTICA: sólo los mapas de color/emissive/alpha usan sRGB.
   function preferSRGBForKey(key){
     return (key === 'map' || key === 'emissiveMap' || key === 'alphaMap');
   }
-  // ----------------------------------
 
+  // Ajustes iniciales del renderer
   sceneEl.addEventListener('render-target-loaded', () => {
     try {
       const renderer = sceneEl.renderer;
@@ -80,10 +85,11 @@
       if (THREE && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
       renderer.shadowMap.enabled = true;
       if (THREE && THREE.PCFSoftShadowMap) renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      console.log('[fix] renderer configured; pixelRatio=', renderer.getPixelRatio());
+      dbg('[fix] renderer configured; pixelRatio=', renderer.getPixelRatio());
     } catch(e){ console.warn('[fix] renderer config failed', e); }
   });
 
+  // Promueve materiales antiguos a MeshStandardMaterial preservando flags relevantes
   function promoteToStandard(oldMat){
     if (!oldMat) return null;
     if (oldMat.isMeshStandardMaterial) return oldMat;
@@ -94,14 +100,14 @@
 
     const copyFlags = [
       'transparent','opacity','alphaTest','vertexColors','skinning','morphTargets',
-      'flatShading','wireframe','emissiveIntensity','metalness','roughness','name','userData'
+      'flatShading','wireframe','emissiveIntensity','name','userData'
     ];
     copyFlags.forEach(k => { if (oldMat[k] !== undefined) newMat[k] = oldMat[k]; });
 
     newMat.side = (oldMat.side !== undefined) ? oldMat.side : THREE.FrontSide;
 
-    if (oldMat.color) newMat.color.copy(oldMat.color);
-    if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
+    if (oldMat.color) try { newMat.color.copy(oldMat.color); } catch(e){}
+    if (oldMat.emissive) try { newMat.emissive.copy(oldMat.emissive); } catch(e){}
 
     newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : (newMat.roughness !== undefined ? newMat.roughness : 1.0);
     newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : (newMat.metalness !== undefined ? newMat.metalness : 0.0);
@@ -110,23 +116,27 @@
     return newMat;
   }
 
+  // Asegura texturas: encoding, mipmaps, tamaño POT cuando tenga sentido.
   function ensureTextureGood(tex, key, renderer, mesh){
-    if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
+    if (!tex) return {ok:false, reason:'no-tex'};
+    // si la imagen no está lista, evita cargarlas mal: espera hasta que esté lista (pero aquí defensivo)
     const img = tex.image;
+    if (!img) return {ok:false, reason:'no-image'};
     const w = img.width || img.naturalWidth || img.bitmapWidth || 0;
     const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
     const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
 
-    // Usa preferSRGBForKey para decidir encoding: CORRECCIÓN aplicada aquí
-    try { 
-      tex.encoding = preferSRGBForKey(key) && THREE && THREE.sRGBEncoding ? THREE.sRGBEncoding : THREE.LinearEncoding; 
+    // Encoding según tipo (crítico)
+    try {
+      tex.encoding = preferSRGBForKey(key) && THREE && THREE.sRGBEncoding ? THREE.sRGBEncoding : THREE.LinearEncoding;
     } catch(e){}
 
-    // Si es aoMap o lightMap y no hay uv2 -> no tocarlo/avisar (mejor quitar que dejar mal)
+    // Si es aoMap/lightMap y no hay uv2 => no usarlo
     if ((key === 'aoMap' || key === 'lightMap') && mesh && mesh.geometry && !mesh.geometry.attributes.uv2) {
       return {ok:false, reason:'missing-uv2'};
     }
 
+    // Reescalado solo si textura demasiado pequeña o NPOT
     if (!isPOT || Math.max(w,h) < TARGET_MIN_TEX) {
       try {
         const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
@@ -147,13 +157,12 @@
         newTex.generateMipmaps = true;
         newTex.minFilter = THREE.LinearMipmapLinearFilter;
         newTex.magFilter = THREE.LinearFilter;
-
         try { 
           const maxAniso = renderer.capabilities && (renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1) || 1;
           newTex.anisotropy = maxAniso;
         } catch(e){ newTex.anisotropy = 1; }
 
-        // Preservar wrap/flipY/premultiply/format cuando sea posible
+        // preservar propiedades importantes
         newTex.wrapS = tex.wrapS || THREE.ClampToEdgeWrapping;
         newTex.wrapT = tex.wrapT || THREE.ClampToEdgeWrapping;
         if (tex.flipY !== undefined) newTex.flipY = tex.flipY;
@@ -168,29 +177,33 @@
       }
     }
 
-    // textura ya ok
-    tex.generateMipmaps = true;
-    tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
-    tex.magFilter = tex.magFilter || THREE.LinearFilter;
-    try { tex.anisotropy = tex.anisotropy || (renderer.capabilities && renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
-    tex.needsUpdate = true;
+    // textura ya aceptable
+    try {
+      tex.generateMipmaps = true;
+      tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
+      tex.magFilter = tex.magFilter || THREE.LinearFilter;
+      tex.anisotropy = tex.anisotropy || (renderer.capabilities && renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1;
+      tex.needsUpdate = true;
+    } catch(e){}
     return {ok:true, replaced:false, info:{w,h,isPOT}};
   }
 
+  // heurístico para detectar el mesh más probable del "cuarto" (floor/pared/techo)
   function detectFloorCandidates(root){
     const meshes = [];
     root.traverse(node => { if (node.isMesh) meshes.push(node); });
     if (!meshes.length) return [];
-    const byName = meshes.filter(m => m.name && /floor|piso|ground|suelo|tile/i.test(m.name));
+    const byName = meshes.filter(m => m.name && /floor|piso|ground|suelo|tile|wall|wall01|ceiling|techo/i.test(m.name));
     if (byName.length) return byName;
     const areaArr = meshes.map(m=>{
       const bb = new THREE.Box3().setFromObject(m);
       const s = new THREE.Vector3(); bb.getSize(s);
-      return {m, area: Math.abs(s.x * s.z), size:s};
+      return {m, area: Math.abs(s.x * s.z) || (Math.abs(s.x*s.y) + Math.abs(s.y*s.z) + Math.abs(s.x*s.y)), size:s};
     }).sort((a,b)=>b.area-a.area);
     return areaArr.slice(0,1).map(x=>x.m);
   }
 
+  // inspección y corrección por modelo
   function inspectAndFixModel(el){
     if (!el) return;
     const renderer = sceneEl.renderer;
@@ -200,48 +213,51 @@
         const root = ev.detail && ev.detail.model ? ev.detail.model : (el.getObject3D('mesh') || el.getObject3D('model'));
         if (!root) return;
         const fixes = [];
+        dbg('[fix] inspecting', el.id, root);
 
-        // detect floor candidates
+        // floor candidates
         const floorCandidates = detectFloorCandidates(root);
         const floorSet = new Set(floorCandidates);
 
         root.traverse(node => {
           if (!node.isMesh) return;
 
+          // calcular normales si faltan
           if (node.geometry && !node.geometry.attributes.normal) {
             node.geometry.computeVertexNormals();
             fixes.push({type:'computedNormals', mesh: node.name || node.id});
           }
 
-          // materiales (posible clonación si es "room")
+          // materiales actuales (array o único)
           let nodeMaterials = Array.isArray(node.material) ? node.material.slice() : [node.material];
-          let treatAsRoom = floorSet.has(node);
 
+          // determinar si lo tratamos como "room" (large mesh / named floor)
+          let treatAsRoom = floorSet.has(node);
           if (!treatAsRoom) {
             try {
               const bb = new THREE.Box3().setFromObject(node);
               const s = new THREE.Vector3(); bb.getSize(s);
               const area = Math.abs(s.x * s.z);
-              if (area > 1.5) treatAsRoom = true;
+              if (area > 1.0) treatAsRoom = true; // más conservador
             } catch(e){}
           }
 
+          // si es habitación, clonamos sus materiales para no tocar materiales compartidos
           if (treatAsRoom) {
             nodeMaterials = nodeMaterials.map(mat => {
               if (!mat) return mat;
-              try {
-                return mat.clone ? mat.clone() : Object.assign(Object.create(Object.getPrototypeOf(mat)), mat);
-              } catch(e){
-                return mat;
-              }
+              try { return mat.clone ? mat.clone() : Object.assign(Object.create(Object.getPrototypeOf(mat)), mat); }
+              catch(e){ return mat; }
             });
             node.material = Array.isArray(node.material) ? nodeMaterials : nodeMaterials[0];
             fixes.push({type:'clonedMatsForRoom', mesh: node.name || node.id});
+            dbg('[fix] cloned materials for', node.name || node.id);
           }
 
+          // correcciones por cada material
           nodeMaterials.forEach((mat, idx) => {
             if (!mat) return;
-
+            // promocionar si es material antiguo
             if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
               const promoted = promoteToStandard(mat);
               if (promoted) {
@@ -249,9 +265,11 @@
                 else node.material = promoted;
                 mat = promoted;
                 fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
+                dbg('[fix] promoted material on', node.name || node.id);
               }
             }
 
+            // revisar mapas
             ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap','alphaMap'].forEach(k => {
               if (node.material && node.material[k]) {
                 const res = ensureTextureGood(node.material[k], k, renderer, node);
@@ -260,42 +278,55 @@
                   node.material[k] = res.newTex;
                   node.material.needsUpdate = true;
                   fixes.push({type:'replacedTexture', mesh: node.name || node.id, key:k, size: `${res.newTex.image.width}x${res.newTex.image.height}`});
+                  dbg('[fix] replaced texture', k, 'on', node.name || node.id);
                 } else if (!res.ok) {
                   if (res.reason === 'missing-uv2') {
+                    // quitar para evitar manchas negras
                     node.material[k] = null;
                     node.material.needsUpdate = true;
                     fixes.push({type:'removedMapMissingUV2', mesh: node.name || node.id, key:k});
+                    dbg('[fix] removed', k, 'due missing uv2 on', node.name || node.id);
+                  } else if (res.reason === 'no-image' || res.reason === 'no-tex') {
+                    // dejar, pero informar
+                    fixes.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: res.reason});
+                    dbg('[fix] texture problem', k, res.reason, 'on', node.name || node.id);
                   } else {
                     fixes.push({type:'texProblem', mesh: node.name || node.id, key:k, reason: res.reason || ''});
+                    dbg('[fix] texture check result', res);
                   }
                 }
               }
             });
 
+            // flags: transparencia y depthWrite
             try {
               if (mat.opacity !== undefined && mat.opacity >= 0.999) {
-                if (mat.transparent) { mat.transparent = false; fixes.push({type:'transparentDisabled', mesh: node.name || node.id}); }
-                if (mat.depthWrite === false) { mat.depthWrite = true; fixes.push({type:'depthWriteEnabled', mesh: node.name || node.id}); }
+                if (mat.transparent) { mat.transparent = false; fixes.push({type:'transparentDisabled', mesh: node.name || node.id}); dbg('[fix] transparent disabled'); }
+                if (mat.depthWrite === false) { mat.depthWrite = true; fixes.push({type:'depthWriteEnabled', mesh: node.name || node.id}); dbg('[fix] depthWrite enabled'); }
               } else {
                 if (mat.transparent) {
                   if (mat.alphaTest === undefined || mat.alphaTest > 0.05) {
                     const old = mat.alphaTest || 0;
                     mat.alphaTest = Math.min(0.05, old || 0.05);
                     fixes.push({type:'alphaTestAdjusted', mesh: node.name || node.id, old, newVal: mat.alphaTest});
+                    dbg('[fix] alphaTest adjusted', old, mat.alphaTest);
                   }
                 }
               }
-            } catch(e){}
+            } catch(e){ dbg('[fix] flags error', e); }
 
+            // polygonOffset para evitar z-fighting/sombras flotadas
             try {
               if (!mat.polygonOffset) {
                 mat.polygonOffset = true;
                 mat.polygonOffsetFactor = (mat.polygonOffsetFactor !== undefined) ? mat.polygonOffsetFactor : 1;
                 mat.polygonOffsetUnits = (mat.polygonOffsetUnits !== undefined) ? mat.polygonOffsetUnits : 4;
                 fixes.push({type:'polygonOffsetApplied', mesh: node.name || node.id});
+                dbg('[fix] polygonOffset applied on', node.name || node.id);
               }
-            } catch(e){}
+            } catch(e){ dbg('[fix] polygonOffset error', e); }
 
+            // Si tratamos la malla como room, forzamos DoubleSide en los materiales CLONADOS
             if (treatAsRoom) {
               try {
                 mat.side = THREE.DoubleSide;
@@ -305,17 +336,19 @@
                 }
                 mat.needsUpdate = true;
                 fixes.push({type:'roomMatDoubleSided', mesh: node.name || node.id});
-              } catch(e){}
+                dbg('[fix] forced DoubleSide on cloned room material', node.name || node.id);
+              } catch(e){ dbg('[fix] force double side error', e); }
             }
           });
 
+          // sombras por defecto (a menos que opt-out)
           if (!(node.userData && node.userData.noShadow)) {
             node.castShadow = true;
             node.receiveShadow = true;
           }
         });
 
-        console.log('[fix] issues found/fixed for', el.id, fixes.length ? fixes : 'none');
+        dbg('[fix] issues found/fixed for', el.id, fixes.length ? fixes : 'none');
       } catch(e){
         console.warn('[fix] model inspect failed for', el.id, e);
       }
@@ -323,19 +356,19 @@
 
     el.addEventListener('model-loaded', onModelLoaded, { once: true });
 
+    // if model already exists, trigger inspection
     const maybe = el.getObject3D('mesh') || el.getObject3D('model');
     if (maybe) el.emit('model-loaded', { model: maybe }, false);
   }
 
+  // enhance lamp shadows (no tocar posiciones/intensidades)
   function enhanceLampShadows(lampId){
     const el = document.getElementById(lampId);
     if (!el) return;
-
     el.addEventListener('object3dset', function handler(){
       const light = el.getObject3D && el.getObject3D('light');
       if (!light) return console.warn('[fix] Light object not found for', lampId);
       light.castShadow = true;
-
       if (light.shadow) {
         const maxAllowed = (sceneEl.renderer && sceneEl.renderer.capabilities && sceneEl.renderer.capabilities.maxTextureSize) || SHADOW_MAP_SIZE;
         const ms = Math.min(SHADOW_MAP_SIZE, maxAllowed);
@@ -352,16 +385,16 @@
           light.shadow.camera.updateProjectionMatrix();
         }
       }
-      console.log('[fix] lamp shadow params applied for', lampId);
+      dbg('[fix] lamp shadow params applied for', lampId);
     }, { once: true });
   }
 
-  // run on all models
+  // run for all gltf-model entities
   const nodes = sceneEl.querySelectorAll('[gltf-model]');
   nodes.forEach(n => inspectAndFixModel(n));
   enhanceLampShadows('greenLamp');
 
-  // debug helpers
+  // debug helpers (útiles para comprobar estado en consola)
   window.__aframe_debug = {
     toggleWireframe: function(state){
       sceneEl.object3D.traverse(node=>{
@@ -377,17 +410,54 @@
           node.visible = on ? false : true;
         }
       });
-      console.log('[debug] onlyAmbient=', !!on);
+      dbg('[debug] onlyAmbient=', !!on);
     },
     listMaterials: function(){
       const out = [];
       sceneEl.object3D.traverse(n => { if (n.isMesh && n.material) out.push({mesh: n.name || n.id, material: n.material}); });
       console.log(out);
       return out;
+    },
+    // toggle de emergencia: fuerza material visible simple en el mesh más grande (habitación)
+    forceRoomMaterial: function(){
+      const ent = document.getElementById('cuarto1_ent');
+      if (!ent) { console.warn('No cuarto1_ent'); return; }
+      const root = ent.getObject3D('mesh') || ent.getObject3D('model');
+      if (!root) { console.warn('Modelo no listo'); return; }
+      // busca el mesh de mayor area (heurístico)
+      let best = null; let bestA = 0;
+      root.traverse(n => {
+        if (!n.isMesh) return;
+        const bb = new THREE.Box3().setFromObject(n); const s = new THREE.Vector3(); bb.getSize(s);
+        const area = Math.abs(s.x * s.z) || Math.abs(s.x*s.y) || Math.abs(s.y*s.z);
+        if (area > bestA) { bestA = area; best = n; }
+      });
+      if (!best) { console.warn('No mesh encontrado'); return; }
+      console.log('forceRoomMaterial -> mesh:', best.name || best.id, 'area', bestA);
+
+      // crear material de prueba que preserve la textura base si existe
+      let testMat;
+      try {
+        const baseMap = best.material && (Array.isArray(best.material) ? best.material[0].map : best.material.map);
+        if (baseMap) {
+          testMat = new THREE.MeshStandardMaterial({ map: baseMap, side: THREE.DoubleSide });
+          if (Array.isArray(best.material)) {
+            best.material = best.material.map(_=> testMat);
+          } else {
+            best.material = testMat;
+          }
+        } else {
+          testMat = new THREE.MeshStandardMaterial({ color: 0x888888, side: THREE.DoubleSide });
+          best.material = testMat;
+        }
+        best.material.needsUpdate = true;
+        best.castShadow = true; best.receiveShadow = true;
+      } catch(e){ console.warn('forceRoomMaterial failed', e); }
+      console.log('forceRoomMaterial applied; verifica si la geometría aparece (si sí, es problema de mapas o encoding).');
     }
   };
 
-  console.log('[fix] Diagnostics loaded — usa __aframe_debug.* en la consola.');
+  dbg('[fix] Diagnostics loaded — usa __aframe_debug.* en la consola.');
 })();
 </script>
 </body>
