@@ -269,5 +269,121 @@
   console.log('[fix] Diagnostics loaded — usa __aframe_debug.* en la consola.');
 })();
 </script>
+  <script>
+(function () {
+  const scene = document.getElementById('scene');
+  if (!scene) return;
+
+  // comprobador ligero de alpha en una imagen (best-effort, captura errores CORS)
+  function imageHasAlpha(img) {
+    try {
+      const w = Math.min(32, img.width || img.naturalWidth || 16);
+      const h = Math.min(32, img.height || img.naturalHeight || 16);
+      if (w <= 0 || h <= 0) return false;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] < 250) return true; // píxel semi/transparente detectado
+      }
+      return false;
+    } catch (e) {
+      // cross-origin o error -> no se puede detectar
+      return false;
+    }
+  }
+
+  // Ajusta propiedades alpha-friendly en el material (no destruye mapas)
+  function applyAlphaSettings(mat, preferAlphaTest) {
+    if (!mat) return;
+    // Si ya está configurado explícitamente, no lo sobreescribimos salvo para asegurar depthWrite
+    if (mat.transparent === true || mat.alphaTest > 0) {
+      // si es blended lo dejamos pero garantizamos depthWrite = false para evitar z-fight visual
+      if (mat.transparent) mat.depthWrite = false;
+      mat.needsUpdate = true;
+      return;
+    }
+    // Si preferimos corte (alphaTest) poner cutout; en escenas con many overlaps prefer blended
+    if (preferAlphaTest) {
+      mat.alphaTest = mat.alphaTest || 0.5;
+      mat.transparent = false;
+      mat.depthWrite = true;
+    } else {
+      mat.transparent = true;
+      mat.alphaTest = mat.alphaTest || 0.5; // fallback
+      mat.depthWrite = false;
+    }
+    mat.needsUpdate = true;
+  }
+
+  // Revisar cada modelo cargado y corregir materiales que tengan alpha
+  function processEntity(el) {
+    if (!el) return;
+    el.addEventListener('model-loaded', (evt) => {
+      const root = evt.detail.model;
+      if (!root) return;
+      root.traverse(node => {
+        if (!node.isMesh) return;
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach(mat => {
+          if (!mat) return;
+          // 1) si existe alphaMap -> cutout preferente
+          if (mat.alphaMap) {
+            applyAlphaSettings(mat, true);
+            console.log('[alpha-fix] alphaMap -> alphaTest applied on material', mat);
+            return;
+          }
+          // 2) si la textura tiene formato RGBA (ya en la GPU)
+          try {
+            if (mat.map && mat.map.format === THREE.RGBAFormat) {
+              applyAlphaSettings(mat, false);
+              console.log('[alpha-fix] map.format RGBA -> transparent applied on material', mat);
+              return;
+            }
+          } catch (e) { /* ignore */ }
+
+          // 3) si podemos inspeccionar la imagen en CPU (same-origin), detectamos alfa
+          try {
+            const img = mat.map && mat.map.image;
+            if (img && (img instanceof HTMLImageElement || img instanceof HTMLCanvasElement || (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap))) {
+              const hasAlpha = imageHasAlpha(img);
+              if (hasAlpha) {
+                // prefer blended para pegatinas con suavizado, pero si quieres hard-cut cambia a true
+                applyAlphaSettings(mat, false);
+                console.log('[alpha-fix] detected alpha in image -> transparent applied', mat);
+                return;
+              }
+            }
+          } catch (e) {
+            // intento fallido (posible CORS) => no alteramos
+          }
+
+          // 4) fallback: si el material tiene nombre que sugiere decal/sticker, forzamos alphaTest conservador
+          try {
+            const name = (mat.name || '').toLowerCase();
+            if (name.includes('sticker') || name.includes('decal') || name.includes('label') || name.includes('logo')) {
+              applyAlphaSettings(mat, true);
+              console.log('[alpha-fix] heuristic name -> alphaTest applied on material', mat.name || '(unnamed)');
+            }
+          } catch (e) {}
+        });
+      });
+    });
+
+    // si ya está cargado, disparamos el evento manualmente
+    const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+    if (maybe) el.emit('model-loaded', {model: maybe}, false);
+  }
+
+  // Aplicar a todos los gltf-models de la escena
+  const nodes = scene.querySelectorAll('[gltf-model]');
+  nodes.forEach(n => processEntity(n));
+
+  console.log('[alpha-fix] loaded — corregirá transparencias cuando los modelos terminen de cargar.');
+})();
+</script>
+
 </body>
 </html>
