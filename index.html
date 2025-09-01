@@ -269,119 +269,161 @@
   console.log('[fix] Diagnostics loaded — usa __aframe_debug.* en la consola.');
 })();
 </script>
-  <script>
-(function () {
-  const scene = document.getElementById('scene');
-  if (!scene) return;
 
-  // comprobador ligero de alpha en una imagen (best-effort, captura errores CORS)
-  function imageHasAlpha(img) {
+<script>
+(function(){
+  const sceneEl = document.getElementById('scene');
+  if (!sceneEl) return;
+
+  // Parámetros recomendados (ajusta si quieres)
+  const DESIRED_SHADOW_SIZE = 2048; // intenta 2048; sube a 4096 si tu GPU lo aguanta
+  const SHADOW_BIAS = -0.0005;
+  const SHADOW_NORMAL_BIAS = 0.03;
+  const SHADOW_RADIUS = 2.0;
+
+  // Heurística: si una malla tiene área XZ muy grande es candidata a piso
+  function isLikelyFloor(mesh) {
     try {
-      const w = Math.min(32, img.width || img.naturalWidth || 16);
-      const h = Math.min(32, img.height || img.naturalHeight || 16);
-      if (w <= 0 || h <= 0) return false;
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      const ctx = c.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
-      const data = ctx.getImageData(0, 0, w, h).data;
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] < 250) return true; // píxel semi/transparente detectado
-      }
-      return false;
-    } catch (e) {
-      // cross-origin o error -> no se puede detectar
-      return false;
-    }
+      const bb = new THREE.Box3().setFromObject(mesh);
+      const size = new THREE.Vector3(); bb.getSize(size);
+      // piso suele ser plano amplio: gran X*Z y pequeña Y
+      const area = size.x * size.z;
+      const thin = size.y < Math.max(size.x, size.z) * 0.15;
+      return area > 1.5 && thin; // parámetros conservadores
+    } catch (e) { return false; }
   }
 
-  // Ajusta propiedades alpha-friendly en el material (no destruye mapas)
-  function applyAlphaSettings(mat, preferAlphaTest) {
-    if (!mat) return;
-    // Si ya está configurado explícitamente, no lo sobreescribimos salvo para asegurar depthWrite
-    if (mat.transparent === true || mat.alphaTest > 0) {
-      // si es blended lo dejamos pero garantizamos depthWrite = false para evitar z-fight visual
-      if (mat.transparent) mat.depthWrite = false;
-      mat.needsUpdate = true;
+  // Heurística: detectar si material es decal/sticker (transparentes)
+  function materialLooksLikeDecal(mat) {
+    if (!mat) return false;
+    try {
+      const name = (mat.name || '').toLowerCase();
+      if (mat.alphaMap) return true;
+      if (mat.transparent) return true;
+      if (mat.map && mat.map.format === THREE.RGBAFormat) return true;
+      if (name.includes('sticker') || name.includes('decal') || name.includes('logo') || name.includes('label')) return true;
+    } catch(e) {}
+    return false;
+  }
+
+  // Ajusta parámetros del punto de luz para sombras (si existe)
+  function tuneLightShadows(lightElId) {
+    const el = document.getElementById(lightElId);
+    if (!el) return;
+    setTimeout(()=>{
+      const light = el.getObject3D && el.getObject3D('light');
+      if (!light) return;
+      // Asegurar que el light soporte sombras
+      light.castShadow = true;
+      // mapSize: usar el máximo seguro soportado por el renderer
+      const renderer = sceneEl.renderer;
+      let maxTex = 2048;
+      try { maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096; } catch(e){}
+      const chosen = Math.min(maxTex, DESIRED_SHADOW_SIZE);
+      if (light.shadow) {
+        light.shadow.mapSize.width = chosen;
+        light.shadow.mapSize.height = chosen;
+        light.shadow.bias = SHADOW_BIAS;
+        if ('normalBias' in light) light.normalBias = SHADOW_NORMAL_BIAS;
+        if ('radius' in light.shadow) light.shadow.radius = SHADOW_RADIUS;
+        // para point lights: ajustar near/far conservadoramente
+        if (light.shadow.camera) {
+          light.shadow.camera.near = 0.1;
+          light.shadow.camera.far = Math.max(50, (light.distance || 50));
+          try { light.shadow.camera.updateProjectionMatrix(); } catch(e){}
+        }
+      }
+      console.log('[shadows] tuned light', lightElId, 'mapSize=', chosen);
+    }, 200); // espera breve a que se instancie la luz
+  }
+
+  // Recorre una malla y ajusta cast/receive en base a heurísticas
+  function applyShadowRulesOnMesh(mesh) {
+    if (!mesh || !mesh.isMesh) return;
+    // Si la malla está marcada como invisible no tocar
+    if (!mesh.visible) return;
+
+    // Si alguno de los materiales sugiere decal -> no proyectar sombras (evita tapar piso)
+    let anyDecal = false;
+    if (mesh.material) {
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (let m of mats) {
+        if (materialLooksLikeDecal(m)) { anyDecal = true; break; }
+      }
+    }
+
+    // Si es posible piso -> recibir sombras, no proyectar (evitar auto-shadowing)
+    if (isLikelyFloor(mesh)) {
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      // aseguramos materiales adecuados
+      if (mesh.material) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach(m => { if (m) { m.side = THREE.DoubleSide; m.needsUpdate = true; } });
+      }
       return;
     }
-    // Si preferimos corte (alphaTest) poner cutout; en escenas con many overlaps prefer blended
-    if (preferAlphaTest) {
-      mat.alphaTest = mat.alphaTest || 0.5;
-      mat.transparent = false;
-      mat.depthWrite = true;
+
+    // Regla general:
+    // - si es decal/transparent -> receiveShadow true (puede recibir) pero castShadow false
+    // - en caso contrario -> castShadow true y receiveShadow true (permite sombras correctas)
+    if (anyDecal) {
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
     } else {
-      mat.transparent = true;
-      mat.alphaTest = mat.alphaTest || 0.5; // fallback
-      mat.depthWrite = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
     }
-    mat.needsUpdate = true;
   }
 
-  // Revisar cada modelo cargado y corregir materiales que tengan alpha
-  function processEntity(el) {
-    if (!el) return;
-    el.addEventListener('model-loaded', (evt) => {
-      const root = evt.detail.model;
-      if (!root) return;
+  // Aplica reglas a todo un objeto3D (tree)
+  function applyShadowRulesToObject3D(root) {
+    try {
       root.traverse(node => {
-        if (!node.isMesh) return;
-        const mats = Array.isArray(node.material) ? node.material : [node.material];
-        mats.forEach(mat => {
-          if (!mat) return;
-          // 1) si existe alphaMap -> cutout preferente
-          if (mat.alphaMap) {
-            applyAlphaSettings(mat, true);
-            console.log('[alpha-fix] alphaMap -> alphaTest applied on material', mat);
-            return;
-          }
-          // 2) si la textura tiene formato RGBA (ya en la GPU)
-          try {
-            if (mat.map && mat.map.format === THREE.RGBAFormat) {
-              applyAlphaSettings(mat, false);
-              console.log('[alpha-fix] map.format RGBA -> transparent applied on material', mat);
-              return;
-            }
-          } catch (e) { /* ignore */ }
-
-          // 3) si podemos inspeccionar la imagen en CPU (same-origin), detectamos alfa
-          try {
-            const img = mat.map && mat.map.image;
-            if (img && (img instanceof HTMLImageElement || img instanceof HTMLCanvasElement || (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap))) {
-              const hasAlpha = imageHasAlpha(img);
-              if (hasAlpha) {
-                // prefer blended para pegatinas con suavizado, pero si quieres hard-cut cambia a true
-                applyAlphaSettings(mat, false);
-                console.log('[alpha-fix] detected alpha in image -> transparent applied', mat);
-                return;
-              }
-            }
-          } catch (e) {
-            // intento fallido (posible CORS) => no alteramos
-          }
-
-          // 4) fallback: si el material tiene nombre que sugiere decal/sticker, forzamos alphaTest conservador
-          try {
-            const name = (mat.name || '').toLowerCase();
-            if (name.includes('sticker') || name.includes('decal') || name.includes('label') || name.includes('logo')) {
-              applyAlphaSettings(mat, true);
-              console.log('[alpha-fix] heuristic name -> alphaTest applied on material', mat.name || '(unnamed)');
-            }
-          } catch (e) {}
-        });
+        if (node.isMesh) applyShadowRulesOnMesh(node);
       });
-    });
-
-    // si ya está cargado, disparamos el evento manualmente
-    const maybe = el.getObject3D('mesh') || el.getObject3D('model');
-    if (maybe) el.emit('model-loaded', {model: maybe}, false);
+    } catch (e) { console.warn('[shadows] apply fail', e); }
   }
 
-  // Aplicar a todos los gltf-models de la escena
-  const nodes = scene.querySelectorAll('[gltf-model]');
-  nodes.forEach(n => processEntity(n));
+  // Hook: cuando un glTF se carga, ajustamos sus meshes
+  function attachModelLoadShadowFix(el) {
+    if (!el) return;
+    el.addEventListener('model-loaded', (ev) => {
+      const model = ev.detail && (ev.detail.model || ev.detail.mesh) || el.getObject3D('mesh') || el.getObject3D('model');
+      if (!model) return;
+      // fijamos reglas para todos los meshes del modelo
+      applyShadowRulesToObject3D(model);
+      console.log('[shadows] applied rules for', el.id || el.tagName);
+    });
+    // si ya estaba cargado
+    const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+    if (maybe) el.emit('model-loaded', { model: maybe }, false);
+  }
 
-  console.log('[alpha-fix] loaded — corregirá transparencias cuando los modelos terminen de cargar.');
+  // Aplica a todos los gltf-model nodes en la escena
+  const models = sceneEl.querySelectorAll('[gltf-model]');
+  models.forEach(n => attachModelLoadShadowFix(n));
+
+  // También aplica a objetos ya presentes en scene.object3D
+  if (sceneEl.object3D) {
+    // pequeño retardo para dar tiempo a loader
+    setTimeout(()=> {
+      applyShadowRulesToObject3D(sceneEl.object3D);
+    }, 400);
+  }
+
+  // Tunear la luz principal
+  tuneLightShadows('greenLamp');
+
+  // Exponer util para re-aplicar (útil para debug)
+  window.__shadows_apply = function() {
+    if (!sceneEl) return;
+    if (sceneEl.object3D) applyShadowRulesToObject3D(sceneEl.object3D);
+    tuneLightShadows('greenLamp');
+    console.log('[shadows] reapplied by user');
+  };
+
+  console.log('[shadows] helper loaded — __shadows_apply() disponible para reintentos');
 })();
 </script>
 
