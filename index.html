@@ -66,19 +66,12 @@
       <a-entity id="cuarto7_ent" gltf-model="#cuarto7" shadow="cast: true; receive: true"></a-entity>
 
       <!-- Cámara y controles -->
-      <a-entity id="rig" 
-          movement-controls="constrainToNavMesh: true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;" 
-          position="0 0 20">
-  
-  <!-- Cámara con soporte móvil -->
-  <a-entity 
-      camera 
-      position="0 1.5 0" 
-      look-controls="touchEnabled: true; mouseEnabled: true; pointerLockEnabled: false" 
-      wasd-controls-enabled="false">
-      <a-cursor></a-cursor>
-  </a-entity>
-</a-entity>
+      <a-entity id="cameraRig"
+                movement-controls="controls: keyboard,gamepad,trackpad; fly: false; speed: 0.12"
+                mobile-joystick>
+        <a-entity camera
+                  position="0 1.5 0"
+                  look-controls="pointerLockEnabled: true; touchEnabled: true; reverseTouchDrag: false"></a-entity>
       
     <script>
       // Ajustar materia invisibilidad de plano de sombra al cargar la escena
