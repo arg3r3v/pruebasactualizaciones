@@ -1,284 +1,67 @@
 <!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Galería — Integrado (movimiento, sombras, alpha)</title>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Escena A-Frame Realista</title>
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  </head>
+  <body>
+    <a-scene shadow="type: pcfsoft" 
+             renderer="antialias: true; colorManagement: true; physicallyCorrectLights: true; toneMapping: ACESFilmic; exposure: 1.0">
+      
+      <!-- Assets: modelos GLB separados -->
+      <a-assets>
+        <a-asset-item id="pisoModel" src="models/piso.glb"></a-asset-item>
+        <a-asset-item id="paredesModel" src="models/paredes.glb"></a-asset-item>
+        <a-asset-item id="techoModel" src="models/techo.glb"></a-asset-item>
+        <!-- Otros modelos de assets aquí -->
+      </a-assets>
 
-  <!-- A-Frame -->
-  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <!-- aframe-extras (movement-controls + nipple) -->
-  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
-
-  <style>
-    html,body { height:100%; margin:0; background:#000; }
-    a-scene { width:100%; height:100vh; display:block; }
-  </style>
-</head>
-<body>
-  <a-scene id="scene"
-           embedded
-           background="color:#000000"
-           renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true"
-           shadow="type:pcfsoft; autoUpdate:true">
-
-    <a-assets timeout="0">
-      <!-- Reemplaza rutas por tus .glb -->
-      <a-asset-item id="techo"   src="models/techo.glb"></a-asset-item>
-      <a-asset-item id="piso"    src="models/piso.glb"></a-asset-item>
-      <a-asset-item id="paredes" src="models/paredes.glb"></a-asset-item>
-
-      <a-asset-item id="asset1" src="models/assets1.glb"></a-asset-item>
-      <a-asset-item id="asset2" src="models/assets2.glb"></a-asset-item>
-      <a-asset-item id="asset3" src="models/assets3.glb"></a-asset-item>
-      <a-asset-item id="asset4" src="models/assets4.glb"></a-asset-item>
-      <a-asset-item id="asset5" src="models/assets5.glb"></a-asset-item>
-      <a-asset-item id="asset6" src="models/assets6.glb"></a-asset-item>
-    </a-assets>
-
-    <!-- luz ambiental muy tenue -->
-    <a-entity light="type:ambient; intensity:0.10; color:#0b0b0b"></a-entity>
-
-    <!-- LUZ (posición solicitada) -->
-    <!-- Usamos SPOT por control de sombras; intensidad ya ajustada a lo que pediste antes -->
-    <a-entity id="greenLamp" position="-6 2 4"
-              light="type:spot; color:#2bff7a; intensity:144; distance:40; angle:1.2; penumbra:0.6; decay:2; castShadow:true">
-    </a-entity>
-
-    <!-- RIG con movement-controls (joystick móvil incluido) -->
-    <!-- NOTA: si quieres restringir a navmesh, añade constrainToNavMesh:true y proporciona navmesh -->
-    <a-entity id="rig"
-              movement-controls="controls: gamepad, trackpad, keyboard, nipple"
-              position="0 1.6 0">
-      <a-entity camera id="camera" position="0 0 0" look-controls="pointerLockEnabled:false; touchEnabled:true">
-        <a-cursor></a-cursor>
+      <!-- Luces: ambiental + direccional -->
+      <a-entity light="type: ambient; color: #ffffff; intensity: 0.6;"></a-entity>
+      <a-entity light="type: directional; color: #ffffff; intensity: 0.4; 
+                       castShadow: true; shadowBias: -0.0005; shadowCameraVisible: false"
+                position="-5 3 2">
       </a-entity>
-    </a-entity>
 
-    <!-- Modelos separados: techo / piso / paredes / assets -->
-    <a-entity id="techo-entity"   gltf-model="#techo"   shadow="cast:true; receive:true"></a-entity>
-    <a-entity id="piso-entity"    gltf-model="#piso"    shadow="cast:true; receive:true"></a-entity>
-    <a-entity id="paredes-entity" gltf-model="#paredes" shadow="cast:true; receive:true"></a-entity>
+      <!-- Suelo receptor de sombras (invisible) -->
+      <a-entity id="shadowPlane" geometry="primitive: plane; width: 20; height: 20"
+                rotation="-90 0 0" position="0 0 0" shadow="receive: true"></a-entity>
 
-    <a-entity id="asset1-entity" gltf-model="#asset1" shadow="cast:true; receive:true"></a-entity>
-    <a-entity id="asset2-entity" gltf-model="#asset2" shadow="cast:true; receive:true"></a-entity>
-    <a-entity id="asset3-entity" gltf-model="#asset3" shadow="cast:true; receive:true"></a-entity>
-    <a-entity id="asset4-entity" gltf-model="#asset4" shadow="cast:true; receive:true"></a-entity>
-    <a-entity id="asset5-entity" gltf-model="#asset5" shadow="cast:true; receive:true"></a-entity>
-    <a-entity id="asset6-entity" gltf-model="#asset6" shadow="cast:true; receive:true"></a-entity>
+      <!-- Modelos GLB cargados -->
+      <a-entity gltf-model="#pisoModel" shadow="receive: true"></a-entity>
+      <a-entity gltf-model="#paredesModel" shadow="cast: true; receive: true"></a-entity>
+      <a-entity gltf-model="#techoModel" shadow="cast: true"></a-entity>
+      <!-- otros modelos y entidades aquí -->
 
-    <!-- Plano invisible receptor sombras (se ajusta al bbox) -->
-    <a-plane id="shadow-receiver"
-             rotation="-90 0 0"
-             position="0 0 0"
-             width="1" height="1"
-             material="color:#000; opacity:0; transparent:true"
-             shadow="receive:true"></a-plane>
-  </a-scene>
+      <!-- Cámara y controles -->
+      <a-entity id="cameraRig">
+        <a-entity camera position="0 1.6 0"
+                  look-controls="pointerLockEnabled: true"
+                  wasd-controls="acceleration: 100; fly: false">
+        </a-entity>
+      </a-entity>
+    </a-scene>
 
-  <script>
-  (function(){
-    const scene = document.getElementById('scene');
-    if (!scene) return;
-
-    const CAMERA_HEIGHT = 1.5; // altura de cámara "pequeña" (ajustable)
-    const MAX_SHADOW_SAFE = (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ? 1024 : 2048;
-
-    // utils
-    function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
-    function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
-
-    // Configura renderer cuando esté listo
-    scene.addEventListener('render-target-loaded', () => {
-      try {
-        const renderer = scene.renderer;
-        if (!renderer) return;
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-        renderer.outputEncoding = THREE.sRGBEncoding;
-        renderer.physicallyCorrectLights = true;
-        renderer.shadowMap.enabled = true;
-        if (THREE.VSMShadowMap) renderer.shadowMap.type = THREE.VSMShadowMap;
-        else renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        console.log('[init] renderer ready, shadowMapType=', renderer.shadowMap.type);
-      } catch(e){ console.warn('[init] renderer config fail', e); }
-    });
-
-    // Heurística: detectar "piso" candidates y marcar receiveShadow
-    function markFloorAndFixMaterials(root) {
-      if (!root) return;
-      let floorCandidates = [];
-      root.traverse(node => {
-        if (!node.isMesh) return;
-        // compute normals if missing
-        if (node.geometry && !node.geometry.attributes.normal) {
-          node.geometry.computeVertexNormals();
+    <script>
+      // Ajustar materia invisibilidad de plano de sombra al cargar la escena
+      document.querySelector('a-scene').addEventListener('loaded', () => {
+        const plane = document.querySelector('#shadowPlane');
+        const mesh = plane.getObject3D('mesh');
+        if (mesh) {
+          mesh.material = new THREE.ShadowMaterial({ opacity: 0.5 });
+          mesh.material.side = THREE.DoubleSide;
         }
-        // material fixes: promote to standard if needed
-        const mats = Array.isArray(node.material) ? node.material : [node.material];
-        mats.forEach(m => {
-          if (!m) return;
-          try {
-            // ensure sRGB for color maps
-            if (m.map && m.map.encoding !== THREE.sRGBEncoding) m.map.encoding = THREE.sRGBEncoding;
-            // if material is Basic/Lambert/Phong, create MeshStandardMaterial clone (preserve key maps)
-            if (m.isMeshBasicMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial) {
-              const newM = new THREE.MeshStandardMaterial();
-              ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap'].forEach(k => { if (m[k]) newM[k] = m[k]; });
-              if (m.color) newM.color.copy(m.color);
-              if (m.emissive) newM.emissive.copy(m.emissive);
-              newM.roughness = (m.roughness !== undefined) ? m.roughness : 1.0;
-              newM.metalness = (m.metalness !== undefined) ? m.metalness : 0.0;
-              newM.side = THREE.DoubleSide;
-              node.material = newM;
-              m = newM;
-            }
-            // alpha handling heuristics
-            if (m.alphaMap || (m.map && m.map.format === THREE.RGBAFormat) || (m.transparent === true)) {
-              // prefer blended for smooth stickers; set depthWrite = false to avoid z-fight
-              m.transparent = true;
-              m.depthWrite = false;
-              if (!m.alphaTest) m.alphaTest = 0.5;
-            }
-            m.needsUpdate = true;
-          } catch(e){}
+        // Centrado automático: calcular bounding box de los modelos
+        const bbox = new THREE.Box3();
+        document.querySelectorAll('a-entity[gltf-model]').forEach(ent => {
+          const obj = ent.getObject3D('mesh');
+          if (obj) bbox.expandByObject(obj);
         });
-
-        // heuristic floor detection by name or bounding area
-        if (node.name && /floor|piso|ground|suelo|tile/i.test(node.name)) {
-          floorCandidates.push(node);
-        }
+        const center = bbox.getCenter(new THREE.Vector3());
+        const rig = document.querySelector('#cameraRig');
+        rig.object3D.position.set(center.x, center.y, center.z);
       });
-
-      // if none by name, pick largest XZ area
-      if (floorCandidates.length === 0) {
-        const meshes = [];
-        root.traverse(n => { if (n.isMesh) meshes.push(n); });
-        if (meshes.length) {
-          const byArea = meshes.map(m => {
-            const bb = new THREE.Box3().setFromObject(m);
-            const s = new THREE.Vector3(); bb.getSize(s);
-            return { m, area: s.x * s.z, size: s };
-          }).sort((a,b)=>b.area-a.area);
-          if (byArea[0] && byArea[0].area > 0) floorCandidates.push(byArea[0].m);
-        }
-      }
-
-      floorCandidates.forEach(f => {
-        try {
-          f.receiveShadow = true;
-          f.castShadow = false;
-          if (f.material) {
-            if (Array.isArray(f.material)) f.material.forEach(mm => { if (mm) { mm.side = THREE.DoubleSide; mm.needsUpdate = true; } });
-            else { f.material.side = THREE.DoubleSide; f.material.needsUpdate = true; }
-          }
-        } catch(e){}
-      });
-    }
-
-    // cuando cada modelo carga: aplicar correcciones
-    const gltfNodes = scene.querySelectorAll('[gltf-model]');
-    gltfNodes.forEach(el => {
-      el.addEventListener('model-loaded', (ev) => {
-        const model = ev.detail && (ev.detail.model.scene || ev.detail.model) || el.getObject3D('mesh') || el.getObject3D('model');
-        if (!model) return;
-        markFloorAndFixMaterials(model);
-      });
-    });
-
-    // centra el rig usando bbox de techo/piso/paredes
-    const essentials = ['techo-entity','piso-entity','paredes-entity'];
-    function computeCenter() {
-      const objs = [];
-      essentials.forEach(id => {
-        const ent = document.getElementById(id);
-        if (!ent) return;
-        const obj = ent.getObject3D('mesh') || ent.getObject3D('model') || ent.getObject3D('gltf');
-        if (obj) objs.push(obj);
-      });
-      if (!objs.length) return;
-      const bbox = new THREE.Box3();
-      objs.forEach(o => { try { bbox.expandByObject(o); } catch(e) {} });
-      if (bbox.isEmpty()) return;
-      const center = new THREE.Vector3(); bbox.getCenter(center);
-      const baseY = bbox.min.y;
-      // rig position
-      const rig = document.getElementById('rig');
-      rig.object3D.position.set(center.x, baseY + CAMERA_HEIGHT, center.z);
-      // update shadow receiver
-      const plane = document.getElementById('shadow-receiver');
-      plane.setAttribute('position', `${center.x} ${baseY + 0.002} ${center.z}`);
-      const size = new THREE.Vector3(); bbox.getSize(size);
-      plane.setAttribute('width', Math.max(0.1, size.x));
-      plane.setAttribute('height', Math.max(0.1, size.z));
-      console.log('[center] rig placed at', rig.object3D.position);
-    }
-
-    // intentar centrar en varios tiempos
-    setTimeout(computeCenter, 200);
-    setTimeout(computeCenter, 800);
-    setTimeout(computeCenter, 2000);
-
-    // tune lamp shadows (espera que el light object exista)
-    function tuneLamp() {
-      const lampEl = document.getElementById('greenLamp');
-      if (!lampEl) return;
-      const light = lampEl.getObject3D && lampEl.getObject3D('light');
-      if (!light) { requestAnimationFrame(tuneLamp); return; }
-      try {
-        light.castShadow = true;
-        if (light.shadow && light.shadow.mapSize && typeof light.shadow.mapSize.set === 'function') {
-          // dimension segura para evitar ruido extremo
-          const renderer = scene.renderer;
-          const maxTex = (renderer && renderer.capabilities && renderer.capabilities.maxTextureSize) || MAX_SHADOW_SAFE;
-          const chosen = Math.min(maxTex, MAX_SHADOW_SAFE);
-          light.shadow.mapSize.set(chosen, chosen);
-        }
-        if (light.shadow) {
-          light.shadow.bias = -0.0004;
-          if ('normalBias' in light) light.normalBias = 0.02;
-          if ('radius' in light.shadow) light.shadow.radius = 2.0;
-          if (light.shadow.camera && light.shadow.camera.updateProjectionMatrix) {
-            light.shadow.camera.near = 0.1;
-            light.shadow.camera.far = Math.max(50, (light.distance || 50));
-            light.shadow.camera.updateProjectionMatrix();
-          }
-        }
-        // si es spot, asegurar target centrado (luego computeCenter puede mover)
-        try { if (light.target && light.target.position) { light.target.position.set(0,1,0); scene.object3D.add(light.target); } } catch(e){}
-        console.log('[lamp] tuned OK');
-      } catch(e){ console.warn('[lamp] tune error', e); }
-    }
-    tuneLamp();
-
-    // herramientas de debugging en consola
-    window.__aframe_debug = {
-      listMaterials: function(){ const out=[]; scene.object3D.traverse(n=>{ if (n.isMesh && n.material) out.push({mesh:n.name||n.id, material:n.material}); }); console.log(out); return out; },
-      reCenter: computeCenter,
-      reTuneLamp: tuneLamp
-    };
-
-    // función para reaplicar sombras y reglas (útil si re-importas modelos)
-    window.__reapply_shadows = function() {
-      scene.object3D.traverse(node => {
-        if (node.isMesh) {
-          try {
-            // heurística: decals/transparents no projec. sombras
-            const mat = node.material;
-            let anyDecal = false;
-            if (mat) {
-              if (mat.alphaMap || mat.transparent || (mat.map && mat.map.format === THREE.RGBAFormat)) anyDecal = true;
-            }
-            if (anyDecal) { node.castShadow = false; node.receiveShadow = true; }
-            else { node.castShadow = true; node.receiveShadow = true; }
-          } catch(e){}
-        }
-      });
-      tuneLamp();
-      console.log('[__reapply_shadows] applied');
-    };
-
-    console.log('[ready] helper utilities loaded — usa __aframe_debug.* y __reapply_shadows() en la consola.');
-  })();
-  </script>
-</body>
+    </script>
+  </body>
 </html>
