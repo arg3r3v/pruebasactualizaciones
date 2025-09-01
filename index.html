@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Galería — Diagnóstico y correcciones (con alpha & sombras corregidas)</title>
+  <title>Galería — Alpha & sombras (corregido)</title>
 
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
@@ -25,10 +25,8 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Ambient suave -->
     <a-entity light="type:ambient; intensity:0.14; color:#0b0b0b"></a-entity>
 
-    <!-- Escenario y props (mantuvimos tu orden/ids) -->
     <a-entity id="cuarto1_ent" gltf-model="#cuarto1" nav-mesh shadow="receive:true"></a-entity>
     <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="cast:true; receive:true"></a-entity>
@@ -36,355 +34,318 @@
     <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="cast:true; receive:true"></a-entity>
 
-    <!-- LUZ (centrada) -->
+    <!-- LUZ centrada -->
     <a-entity id="greenLamp" position="0 2.88 0"
               light="type:point; color:#2bff7a; intensity:144; distance:30; decay:2; castShadow:true"></a-entity>
 
-    <!-- RIG / Cámara (altura aumentada) -->
     <a-entity id="rig" position="0 0 2"
               movement-controls="constrainToNavMesh:true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
       <a-entity camera position="0 4.05 0" look-controls="pointerLockEnabled:true"><a-cursor></a-cursor></a-entity>
     </a-entity>
   </a-scene>
 
-  <!-- === SCRIPT ÚNICO: manejo texturas/alpha/promoción/materiales + sombras ==== -->
-  <script>
-  (function() {
-    const sceneEl = document.getElementById('scene');
-    if (!sceneEl) return;
+<script>
+(function(){
+  const sceneEl = document.getElementById('scene');
+  if (!sceneEl) return;
 
-    const TARGET_MIN_TEX = 1024;           // tamaño mínimo recomendado (mejora sombras/lighting)
-    const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 2);
-    const DESIRED_SHADOW_SIZE = 2048;      // shadow map target (sube si tu GPU aguanta)
-    const SHADOW_BIAS = -0.0005;
-    const SHADOW_NORMAL_BIAS = 0.03;
-    const SHADOW_RADIUS = 2.0;
+  const TARGET_MIN_TEX = 1024;
+  const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 2);
+  const DESIRED_SHADOW_SIZE = 2048;
+  const SHADOW_BIAS = -0.0005;
+  const SHADOW_NORMAL_BIAS = 0.03;
+  const SHADOW_RADIUS = 2.0;
 
-    /* Helpers */
-    function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
-    function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
-    function preferSRGBForKey(key){
-      const col = ['map','emissiveMap','lightMap','aoMap','alphaMap'];
-      return col.indexOf(key) !== -1;
-    }
+  function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
+  function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
 
-    // detect alpha channel in an HTMLImageElement or canvas (best-effort; CORS may fail)
-    function imageHasAlpha(img) {
-      try {
-        const w = Math.min(32, img.width || img.naturalWidth || 16);
-        const h = Math.min(32, img.height || img.naturalHeight || 16);
-        if (w <= 0 || h <= 0) return false;
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
-        const data = ctx.getImageData(0,0,w,h).data;
-        for (let i = 3; i < data.length; i += 4) if (data[i] < 250) return true;
-        return false;
-      } catch (e) {
-        return false; // cross-origin o fallo -> no podemos confirmarlo
-      }
-    }
+  // prefer SRGB only for color maps (no alphaMap)
+  function preferSRGBForKey(key){
+    const col = ['map','emissiveMap','lightMap','aoMap'];
+    return col.indexOf(key) !== -1;
+  }
 
-    // Promueve material antiguo a MeshStandard, copiando props alpha importantes
-    function promoteToStandard(oldMat, renderer) {
-      if (!oldMat) return null;
-      if (oldMat.isMeshStandardMaterial) return oldMat;
-      const newMat = new THREE.MeshStandardMaterial();
-      // Copy maps conservatively
-      ['map','alphaMap','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap'].forEach(k=>{
-        if (oldMat[k]) newMat[k] = oldMat[k];
-      });
-      // Copy colors and alpha props
-      if (oldMat.color) newMat.color.copy(oldMat.color);
-      if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
-      if (oldMat.opacity !== undefined) newMat.opacity = oldMat.opacity;
-      if (oldMat.transparent !== undefined) newMat.transparent = oldMat.transparent;
-      if (oldMat.alphaTest !== undefined) newMat.alphaTest = oldMat.alphaTest;
-      newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : 1.0;
-      newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : 0.0;
-      newMat.side = THREE.DoubleSide;
-      newMat.needsUpdate = true;
-      return newMat;
-    }
+  // Safe getter de anisotropy
+  function getMaxAnisotropy(renderer){
+    try {
+      if (!renderer) return 1;
+      const caps = renderer.capabilities || {};
+      if (typeof caps.getMaxAnisotropy === 'function') return caps.getMaxAnisotropy();
+      if (typeof caps.maxAnisotropy === 'number') return caps.maxAnisotropy;
+      // fallback: try renderer.extensions (rare)
+      return (caps.maxAnisotropy || 1);
+    } catch(e){ return 1; }
+  }
 
-    // Mejora/normaliza una textura: preserva alpha si existe, crea CanvasTexture POT si es necesario.
-    // IMPORTANT: usamos ClampToEdgeWrapping por defecto para evitar artefactos de retícula.
-    function ensureTextureGood(tex, key, renderer) {
-      if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
-      const img = tex.image;
-      const w = img.width || img.naturalWidth || img.bitmapWidth || 0;
-      const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
-      const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
-      const wantSRGB = preferSRGBForKey(key);
-
-      // Try detect alpha from the source image (best-effort)
-      let srcHasAlpha = false;
-      try { srcHasAlpha = imageHasAlpha(img); } catch(e){ srcHasAlpha = false; }
-
-      // If not POT or small, upscale to POT canvas (preserve alpha)
-      if (!isPOT || Math.max(w,h) < TARGET_MIN_TEX) {
-        try {
-          const maxTex = renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
-          const desired = Math.min(maxTex, Math.max(TARGET_MIN_TEX, Math.max(w,h)));
-          const target = nextPOT(desired);
-          const canvas = document.createElement('canvas');
-          canvas.width = target; canvas.height = target;
-          const ctx = canvas.getContext('2d');
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          const aspect = (w && h) ? (w/h) : 1;
-          let dw = target, dh = target;
-          if (aspect > 1) dh = Math.round(target / aspect); else dw = Math.round(target * aspect);
-          const ox = Math.round((target-dw)/2), oy = Math.round((target-dh)/2);
-          // clear to transparent to keep alpha channel
-          ctx.clearRect(0,0,target,target);
-          ctx.drawImage(img, ox, oy, dw, dh);
-          const newTex = new THREE.CanvasTexture(canvas);
-          newTex.format = THREE.RGBAFormat;
-          newTex.premultiplyAlpha = true;
-          newTex.generateMipmaps = true;
-          newTex.minFilter = THREE.LinearMipmapLinearFilter;
-          newTex.magFilter = THREE.LinearFilter;
-          try { newTex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch(e){}
-          newTex.wrapS = newTex.wrapT = THREE.ClampToEdgeWrapping; // evitar "lineas" por repeat
-          newTex.encoding = wantSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
-          newTex.needsUpdate = true;
-          // re-detect alpha from canvas
-          let hasAlpha = false;
-          try {
-            const sample = ctx.getImageData(0,0,Math.min(16,target),Math.min(16,target)).data;
-            for (let i=3;i<sample.length;i+=4) if (sample[i] < 255) { hasAlpha = true; break; }
-          } catch(e){}
-          return {ok:true, replaced:true, newTex, hasAlpha};
-        } catch (e) {
-          return {ok:false, reason:'canvas-resize-failed', err:e};
-        }
-      }
-
-      // otherwise normalize existing texture settings
-      try {
-        tex.generateMipmaps = true;
-        tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
-        tex.magFilter = tex.magFilter || THREE.LinearFilter;
-        try { tex.anisotropy = tex.anisotropy || (renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy()) || 1; } catch(e){}
-        tex.wrapS = tex.wrapS || THREE.ClampToEdgeWrapping;
-        tex.wrapT = tex.wrapT || THREE.ClampToEdgeWrapping;
-        tex.encoding = wantSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
-        if (srcHasAlpha) { try { tex.format = THREE.RGBAFormat; tex.premultiplyAlpha = true; } catch(e){} }
-        tex.needsUpdate = true;
-        return {ok:true, replaced:false, info:{w,h,isPOT}, hasAlpha: srcHasAlpha};
-      } catch(e){
-        return {ok:false, reason:'tex-fail', err:e};
-      }
-    }
-
-    // Detección sencilla de piso por bounding box (área grande en XZ y "delgado" en Y)
-    function isLikelyFloorMesh(mesh) {
-      try {
-        const bb = new THREE.Box3().setFromObject(mesh);
-        const size = new THREE.Vector3(); bb.getSize(size);
-        const area = size.x * size.z;
-        const thin = size.y < Math.max(size.x, size.z) * 0.15;
-        return area > 1.5 && thin;
-      } catch(e){ return false; }
-    }
-
-    // Detecta materiales que parecen decals/pegatinas (no queremos que proyecten sombra)
-    function materialLooksLikeDecal(mat) {
-      if (!mat) return false;
-      try {
-        const name = (mat.name || '').toLowerCase();
-        if (mat.alphaMap) return true;
-        if (mat.transparent) return true;
-        if (mat.map && mat.map.format === THREE.RGBAFormat) return true;
-        if (name.includes('sticker')||name.includes('decal')||name.includes('label')||name.includes('logo')) return true;
-      } catch(e){}
+  // Detect alpha in an image (best-effort, may fail due CORS)
+  function imageHasAlpha(img){
+    try {
+      const w = Math.min(32, img.width || img.naturalWidth || 16);
+      const h = Math.min(32, img.height || img.naturalHeight || 16);
+      if (w <= 0 || h <= 0) return false;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0,0,w,h).data;
+      for (let i = 3; i < data.length; i += 4) if (data[i] < 250) return true;
       return false;
-    }
+    } catch (e) { return false; }
+  }
 
-    // Aplica reglas de alpha al material (no destructivo)
-    function configureAlphaForMaterial(mat, hasAlphaDetected) {
-      if (!mat) return;
-      // si ya venía con settings explícitos, respetar y solo asegurar depthWrite cuando sea blended
-      if (mat.transparent === true || (mat.alphaTest && mat.alphaTest > 0)) {
-        if (mat.transparent) mat.depthWrite = false;
-        mat.needsUpdate = true;
-        return;
-      }
+  // Promote to MeshStandardMaterial (copy alpha props too)
+  function promoteToStandard(oldMat, renderer) {
+    if (!oldMat) return null;
+    if (oldMat.isMeshStandardMaterial) return oldMat;
+    const newMat = new THREE.MeshStandardMaterial();
+    ['map','alphaMap','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap'].forEach(k=>{
+      if (oldMat[k]) newMat[k] = oldMat[k];
+    });
+    if (oldMat.color) newMat.color.copy(oldMat.color);
+    if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
+    if (oldMat.opacity !== undefined) newMat.opacity = oldMat.opacity;
+    if (oldMat.transparent !== undefined) newMat.transparent = oldMat.transparent;
+    if (oldMat.alphaTest !== undefined) newMat.alphaTest = oldMat.alphaTest;
+    newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : 1.0;
+    newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : 0.0;
+    newMat.side = THREE.DoubleSide;
+    newMat.needsUpdate = true;
+    return newMat;
+  }
 
-      if (hasAlphaDetected || materialLooksLikeDecal(mat)) {
-        // preferimos blended (suavizado) para stickers; si quieres hard cut pone alphaTest true instead
-        mat.transparent = true;
-        mat.alphaTest = mat.alphaTest || 0.5; // fallback conservador
-        mat.depthWrite = false; // evita ordenar mal las transparencias y "pegatinas sólidas"
-        mat.needsUpdate = true;
-      }
-    }
+  // Normalize / upscale textures (preserving alpha if exists). Use ClampToEdgeWrapping to avoid "line" artifacts.
+  function ensureTextureGood(tex, key, renderer) {
+    if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
+    const img = tex.image;
+    const w = img.width || img.naturalWidth || img.bitmapWidth || 0;
+    const h = img.height || img.naturalHeight || img.bitmapHeight || 0;
+    const isPOT = isPowerOfTwo(w) && isPowerOfTwo(h);
+    const wantSRGB = preferSRGBForKey(key);
+    let srcHasAlpha = imageHasAlpha(img);
 
-    // Reglas para aplicar sobre cada mesh cargado
-    function applyRulesToMesh(mesh, renderer) {
-      if (!mesh || !mesh.isMesh) return;
-      if (!mesh.visible) return;
-
-      // compute normals if missing
-      if (mesh.geometry && !mesh.geometry.attributes.normal) {
-        mesh.geometry.computeVertexNormals();
-      }
-
-      // materials array
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-
-      // iterate materials: promote & fix textures & alphas
-      mats.forEach((mat, mi) => {
-        if (!mat) return;
-        // promote legacy materials to MeshStandard
-        if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
-          const promoted = promoteToStandard(mat, renderer);
-          if (promoted) {
-            if (Array.isArray(mesh.material)) mesh.material[mi] = promoted;
-            else mesh.material = promoted;
-            mat = Array.isArray(mesh.material) ? mesh.material[mi] : mesh.material;
-          }
-        }
-        // check maps
-        ['map','emissiveMap','alphaMap','normalMap','metalnessMap','roughnessMap','aoMap'].forEach(k => {
-          try {
-            const tex = mat[k];
-            if (!tex) return;
-            const res = ensureTextureGood(tex, k, renderer);
-            if (res.ok && res.replaced && res.newTex) {
-              mat[k] = res.newTex;
-              mat.needsUpdate = true;
-              // if the texture copy has alpha, configure alpha
-              if (res.hasAlpha) configureAlphaForMaterial(mat, true);
-            } else if (res.ok && res.hasAlpha) {
-              configureAlphaForMaterial(mat, true);
-            }
-            // if res.ok === false we just log but don't break
-          } catch(e){ /* ignore per-material errors */ }
-        });
-      });
-
-      // decide shadow behavior:
-      // floor candidate: receive only (no cast)
-      if (isLikelyFloorMesh(mesh)) {
-        mesh.receiveShadow = true;
-        mesh.castShadow = false;
-        // ensure material double sided to avoid lighting artifacts
-        const mats2 = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        mats2.forEach(m=>{ if (m) { m.side = THREE.DoubleSide; m.needsUpdate = true; } });
-        return;
-      }
-
-      // decals should not cast shadows but should receive
-      let anyDecal = false;
-      mats.forEach(m => { if (materialLooksLikeDecal(m)) anyDecal = true; });
-
-      if (anyDecal) {
-        mesh.castShadow = false;
-        mesh.receiveShadow = true;
-      } else {
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-      }
-    }
-
-    // Cuando un glTF se carga -> aplicar rules a cada mesh del modelo
-    function processModelEntity(el) {
-      if (!el) return;
-      el.addEventListener('model-loaded', (ev) => {
-        const model = (ev && ev.detail && (ev.detail.model || ev.detail.scene || ev.detail.mesh)) || el.getObject3D('model') || el.getObject3D('mesh');
-        if (!model) return;
-        const renderer = sceneEl.renderer;
-        model.traverse(node => {
-          if (node.isMesh) {
-            try { applyRulesToMesh(node, renderer); } catch(e){ console.warn('[proc] mesh rule fail', e); }
-          }
-        });
-        console.log('[proc] model rules applied for', el.id);
-      });
-      // if already loaded
-      const maybe = el.getObject3D('mesh') || el.getObject3D('model');
-      if (maybe) el.emit('model-loaded', { model: maybe }, false);
-    }
-
-    // Tune light shadows safely
-    function tuneLight(lightId) {
-      const el = document.getElementById(lightId);
-      if (!el) return;
-      setTimeout(()=>{
-        const light = el.getObject3D && el.getObject3D('light');
-        if (!light) { console.warn('[light] not found', lightId); return; }
-        light.castShadow = true;
-        const renderer = sceneEl.renderer;
-        let maxTex = 2048;
-        try { maxTex = (renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096)) || 4096; } catch(e){}
-        const chosen = Math.min(maxTex, DESIRED_SHADOW_SIZE);
-        if (light.shadow) {
-          light.shadow.mapSize.width = chosen;
-          light.shadow.mapSize.height = chosen;
-          light.shadow.bias = SHADOW_BIAS;
-          if ('normalBias' in light) light.normalBias = SHADOW_NORMAL_BIAS;
-          if (light.shadow.radius !== undefined) light.shadow.radius = SHADOW_RADIUS;
-          // for point lights, camera exists per-cubemap; set conservatively
-          if (light.shadow.camera && light.shadow.camera.updateProjectionMatrix) {
-            light.shadow.camera.near = 0.1;
-            light.shadow.camera.far = Math.max(50, (light.distance || 50));
-            try { light.shadow.camera.updateProjectionMatrix(); } catch(e){}
-          }
-        }
-        console.log('[light] tuned', lightId, 'mapSize=', chosen);
-      }, 200);
-    }
-
-    // Configure renderer on load
-    sceneEl.addEventListener('render-target-loaded', () => {
+    if (!isPOT || Math.max(w,h) < TARGET_MIN_TEX) {
       try {
-        const renderer = sceneEl.renderer;
-        if (!renderer) return;
-        renderer.setPixelRatio(MAX_PIXELRATIO);
-        renderer.outputEncoding = THREE.sRGBEncoding;
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        console.log('[renderer] configured (pixelRatio=' + renderer.getPixelRatio() + ')');
-      } catch(e){ console.warn('[renderer] config failed', e); }
+        const maxTex = renderer && renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096) || 4096;
+        const desired = Math.min(maxTex, Math.max(TARGET_MIN_TEX, Math.max(w,h)));
+        const target = nextPOT(desired);
+        const canvas = document.createElement('canvas');
+        canvas.width = target; canvas.height = target;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,target,target);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        const aspect = (w && h) ? (w/h) : 1;
+        let dw = target, dh = target;
+        if (aspect > 1) dh = Math.round(target / aspect); else dw = Math.round(target * aspect);
+        const ox = Math.round((target-dw)/2), oy = Math.round((target-dh)/2);
+        ctx.drawImage(img, ox, oy, dw, dh);
+        const newTex = new THREE.CanvasTexture(canvas);
+        newTex.format = THREE.RGBAFormat;
+        newTex.premultiplyAlpha = false; // más seguro para evitar halos
+        newTex.generateMipmaps = true;
+        newTex.minFilter = THREE.LinearMipmapLinearFilter;
+        newTex.magFilter = THREE.LinearFilter;
+        try { newTex.anisotropy = getMaxAnisotropy(renderer); } catch(e){}
+        newTex.wrapS = newTex.wrapT = THREE.ClampToEdgeWrapping;
+        newTex.encoding = wantSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        newTex.needsUpdate = true;
+        // quick alpha sample
+        let hasAlpha = false;
+        try {
+          const sample = ctx.getImageData(0,0,Math.min(16,target),Math.min(16,target)).data;
+          for (let i = 3; i < sample.length; i += 4) if (sample[i] < 255) { hasAlpha = true; break; }
+        } catch(e){}
+        return {ok:true, replaced:true, newTex, hasAlpha};
+      } catch(e){
+        return {ok:false, reason:'canvas-resize-failed', err:e};
+      }
+    }
+
+    // normalize existing texture
+    try {
+      tex.generateMipmaps = true;
+      tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
+      tex.magFilter = tex.magFilter || THREE.LinearFilter;
+      try { tex.anisotropy = tex.anisotropy || getMaxAnisotropy(renderer); } catch(e){}
+      tex.wrapS = tex.wrapS || THREE.ClampToEdgeWrapping;
+      tex.wrapT = tex.wrapT || THREE.ClampToEdgeWrapping;
+      tex.encoding = wantSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
+      if (srcHasAlpha) { tex.format = THREE.RGBAFormat; tex.premultiplyAlpha = false; }
+      tex.needsUpdate = true;
+      return {ok:true, replaced:false, info:{w,h,isPOT}, hasAlpha: srcHasAlpha};
+    } catch(e){
+      return {ok:false, reason:'tex-fail', err:e};
+    }
+  }
+
+  function isLikelyFloorMesh(mesh) {
+    try {
+      const bb = new THREE.Box3().setFromObject(mesh);
+      const size = new THREE.Vector3(); bb.getSize(size);
+      const area = size.x * size.z;
+      const thin = size.y < Math.max(size.x, size.z) * 0.15;
+      return area > 1.5 && thin;
+    } catch(e){ return false; }
+  }
+
+  function materialLooksLikeDecal(mat) {
+    if (!mat) return false;
+    try {
+      const name = (mat.name || '').toLowerCase();
+      if (mat.alphaMap) return true;
+      if (mat.transparent) return true;
+      if (mat.map && mat.map.format === THREE.RGBAFormat) return true;
+      if (name.includes('sticker')||name.includes('decal')||name.includes('label')||name.includes('logo')) return true;
+    } catch(e){}
+    return false;
+  }
+
+  function configureAlphaForMaterial(mat, hasAlphaDetected) {
+    if (!mat) return;
+    if (mat.transparent === true || (mat.alphaTest && mat.alphaTest > 0)) {
+      if (mat.transparent) mat.depthWrite = false;
+      mat.needsUpdate = true;
+      return;
+    }
+    if (hasAlphaDetected || materialLooksLikeDecal(mat)) {
+      mat.transparent = true;
+      mat.alphaTest = mat.alphaTest || 0.5;
+      mat.depthWrite = false;
+      mat.needsUpdate = true;
+    }
+  }
+
+  function applyRulesToMesh(mesh, renderer) {
+    if (!mesh || !mesh.isMesh) return;
+    if (!mesh.visible) return;
+    if (mesh.geometry && !mesh.geometry.attributes.normal) mesh.geometry.computeVertexNormals();
+
+    const mats = Array.isArray(mesh.material) ? mesh.material.slice() : [mesh.material];
+
+    mats.forEach((mat, mi) => {
+      if (!mat) return;
+      if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
+        const promoted = promoteToStandard(mat, renderer);
+        if (promoted) {
+          if (Array.isArray(mesh.material)) mesh.material[mi] = promoted;
+          else mesh.material = promoted;
+          mat = Array.isArray(mesh.material) ? mesh.material[mi] : mesh.material;
+        }
+      }
+      ['map','emissiveMap','alphaMap','normalMap','metalnessMap','roughnessMap','aoMap'].forEach(k => {
+        try {
+          if (!mat[k]) return;
+          const res = ensureTextureGood(mat[k], k, renderer);
+          if (res.ok && res.replaced && res.newTex) {
+            mat[k] = res.newTex;
+            mat.needsUpdate = true;
+            if (res.hasAlpha) configureAlphaForMaterial(mat, true);
+          } else if (res.ok && res.hasAlpha) {
+            configureAlphaForMaterial(mat, true);
+          }
+        } catch(e){}
+      });
     });
 
-    // Apply to all existing gltf-model elements
-    const nodes = sceneEl.querySelectorAll('[gltf-model]');
-    nodes.forEach(n => processModelEntity(n));
+    if (isLikelyFloorMesh(mesh)) {
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      const mats2 = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      mats2.forEach(m=>{ if (m) { m.side = THREE.DoubleSide; m.needsUpdate = true; } });
+      return;
+    }
 
-    // tune the lamp
-    tuneLight('greenLamp');
+    let anyDecal = false;
+    mats.forEach(m => { if (materialLooksLikeDecal(m)) anyDecal = true; });
 
-    // small safety pass: after 600ms re-walk scene.object3D to enforce shadow flags (covers anything already instantiated)
-    setTimeout(()=> {
-      try {
-        const root = sceneEl.object3D;
-        if (!root) return;
-        root.traverse(node => {
-          if (node.isMesh) {
-            try { applyRulesToMesh(node, sceneEl.renderer); } catch(e){}
-          }
-        });
-        console.log('[safety] one-time pass applied to scene.object3D');
-      } catch(e){ console.warn('[safety] pass failed', e); }
-    }, 600);
+    if (anyDecal) {
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+    } else {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+    }
+  }
 
-    // consola: utilidades de debug
-    window.__aframe_debug = window.__aframe_debug || {};
-    window.__aframe_debug.listMaterials = function(){
-      const out = [];
-      sceneEl.object3D.traverse(n => { if (n.isMesh && n.material) out.push({mesh:n.name||n.id, material: n.material}); });
-      console.log(out);
-      return out;
-    };
-    window.__shadows_apply = function(){ nodes.forEach(n => processModelEntity(n)); tuneLight('greenLamp'); console.log('[manual] reapplied'); };
+  function processModelEntity(el) {
+    if (!el) return;
+    el.addEventListener('model-loaded', (ev) => {
+      const model = (ev && ev.detail && (ev.detail.model || ev.detail.scene || ev.detail.mesh)) || el.getObject3D('model') || el.getObject3D('mesh');
+      if (!model) return;
+      const renderer = sceneEl.renderer || null;
+      model.traverse(node => { if (node.isMesh) try{ applyRulesToMesh(node, renderer); } catch(e){} });
+      console.log('[proc] model rules applied for', el.id);
+    });
+    const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+    if (maybe) el.emit('model-loaded', { model: maybe }, false);
+  }
 
-    console.log('[init] alpha+shadow helper loaded — use __aframe_debug.listMaterials() and __shadows_apply() from console');
-  })();
-  </script>
+  function tuneLight(lightId) {
+    const el = document.getElementById(lightId);
+    if (!el) return;
+    setTimeout(()=>{
+      const light = el.getObject3D && el.getObject3D('light');
+      if (!light) return;
+      light.castShadow = true;
+      const renderer = sceneEl.renderer;
+      let maxTex = 2048;
+      try { maxTex = (renderer.capabilities && (renderer.capabilities.maxTextureSize || 4096)) || 4096; } catch(e){}
+      const chosen = Math.min(maxTex, DESIRED_SHADOW_SIZE);
+      if (light.shadow) {
+        light.shadow.mapSize.width = chosen;
+        light.shadow.mapSize.height = chosen;
+        light.shadow.bias = SHADOW_BIAS;
+        if ('normalBias' in light) light.normalBias = SHADOW_NORMAL_BIAS;
+        if ('radius' in light.shadow) light.shadow.radius = SHADOW_RADIUS;
+        if (light.shadow.camera && light.shadow.camera.updateProjectionMatrix) {
+          light.shadow.camera.near = 0.1;
+          light.shadow.camera.far = Math.max(50, (light.distance || 50));
+          try { light.shadow.camera.updateProjectionMatrix(); } catch(e){}
+        }
+      }
+      console.log('[light] tuned', lightId, 'mapSize=', chosen);
+    }, 200);
+  }
+
+  sceneEl.addEventListener('render-target-loaded', () => {
+    try {
+      const renderer = sceneEl.renderer;
+      if (!renderer) return;
+      renderer.setPixelRatio(MAX_PIXELRATIO);
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      console.log('[renderer] configured (pixelRatio=' + renderer.getPixelRatio() + ')');
+    } catch(e){ console.warn('[renderer] config failed', e); }
+  });
+
+  const nodes = sceneEl.querySelectorAll('[gltf-model]');
+  nodes.forEach(n => processModelEntity(n));
+  tuneLight('greenLamp');
+
+  // Safety pass after scene loads
+  setTimeout(()=> {
+    try {
+      const root = sceneEl.object3D;
+      if (!root) return;
+      root.traverse(node => { if (node.isMesh) try{ applyRulesToMesh(node, sceneEl.renderer); } catch(e){} });
+      console.log('[safety] pass applied to scene.object3D');
+    } catch(e){ console.warn('[safety] pass failed', e); }
+  }, 700);
+
+  // Debug utils
+  window.__aframe_debug = window.__aframe_debug || {};
+  window.__aframe_debug.listMaterials = function(){
+    const out = [];
+    sceneEl.object3D.traverse(n => { if (n.isMesh && n.material) out.push({mesh:n.name||n.id, material: n.material}); });
+    console.log(out);
+    return out;
+  };
+  window.__shadows_apply = function(){ nodes.forEach(n => processModelEntity(n)); tuneLight('greenLamp'); console.log('[manual] reapplied'); };
+
+  console.log('[init] helper loaded — usa __aframe_debug.listMaterials() y __shadows_apply()');
+})();
+</script>
 
 </body>
 </html>
