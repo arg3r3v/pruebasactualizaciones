@@ -67,12 +67,8 @@
 
       <!-- Cámara y controles -->
       <a-entity id="cameraRig"
-                movement-controls="controls: keyboard,gamepad,trackpad; fly: false; speed: 0.12"
-                mobile-joystick>
-        <a-entity camera
-                  position="0 1.5 0"
-                  look-controls="pointerLockEnabled: true; touchEnabled: true; reverseTouchDrag: false"></a-entity>
-      </a-entity>
+                movement-controls="controls: keyboard,gamepad,trackpad,nipple; fly: false; speed: 0.12">
+        <a-entity camera position="0 1.5 0" look-controls="pointerLockEnabled: true"> <a-cursor></a-cursor>
 
     <script>
       // Ajustar materia invisibilidad de plano de sombra al cargar la escena
