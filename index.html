@@ -1,67 +1,245 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>Escena A-Frame Realista</title>
-    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-  </head>
-  <body>
-    <a-scene shadow="type: pcfsoft" 
-             renderer="antialias: true; colorManagement: true; physicallyCorrectLights: true; toneMapping: ACESFilmic; exposure: 1.0">
-      
-      <!-- Assets: modelos GLB separados -->
-      <a-assets>
-        <a-asset-item id="pisoModel" src="models/piso.glb"></a-asset-item>
-        <a-asset-item id="paredesModel" src="models/paredes.glb"></a-asset-item>
-        <a-asset-item id="techoModel" src="models/techo.glb"></a-asset-item>
-        <!-- Otros modelos de assets aquí -->
-      </a-assets>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Escena A-Frame — Cuarto con luz interior verde</title>
 
-      <!-- Luces: ambiental + direccional -->
-      <a-entity light="type: ambient; color: #ffffff; intensity: 0.6;"></a-entity>
-      <a-entity light="type: directional; color: #ffffff; intensity: 0.4; 
-                       castShadow: true; shadowBias: -0.0005; shadowCameraVisible: false"
-                position="-5 3 2">
-      </a-entity>
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  <!-- aframe-extras para movement-controls (joystick en móvil, etc.) -->
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
-      <!-- Suelo receptor de sombras (invisible) -->
-      <a-entity id="shadowPlane" geometry="primitive: plane; width: 20; height: 20"
-                rotation="-90 0 0" position="0 0 0" shadow="receive: true"></a-entity>
+  <style>
+    html,body{height:100%;margin:0;background:#000}
+    a-scene{height:100vh;width:100vw;display:block}
+  </style>
+</head>
+<body>
+  <a-scene id="scene"
+           background="color:#000000"
+           renderer="antialias: true; colorManagement: true; physicallyCorrectLights: true; toneMapping: ACESFilmic; exposure: 1.0"
+           shadow="type: pcfsoft; autoUpdate: true">
 
-      <!-- Modelos GLB cargados -->
-      <a-entity gltf-model="#pisoModel" shadow="receive: true"></a-entity>
-      <a-entity gltf-model="#paredesModel" shadow="cast: true; receive: true"></a-entity>
-      <a-entity gltf-model="#techoModel" shadow="cast: true"></a-entity>
-      <!-- otros modelos y entidades aquí -->
+    <!-- ASSETS: reemplaza rutas a tus .glb -->
+    <a-assets timeout="0">
+      <a-asset-item id="pisoModel" src="models/piso.glb"></a-asset-item>
+      <a-asset-item id="paredesModel" src="models/paredes.glb"></a-asset-item>
+      <a-asset-item id="techoModel" src="models/techo.glb"></a-asset-item>
+      <!-- assets adicionales (1..6) -->
+      <a-asset-item id="asset1" src="models/asset1.glb"></a-asset-item>
+      <a-asset-item id="asset2" src="models/asset2.glb"></a-asset-item>
+      <a-asset-item id="asset3" src="models/asset3.glb"></a-asset-item>
+      <a-asset-item id="asset4" src="models/asset4.glb"></a-asset-item>
+      <a-asset-item id="asset5" src="models/asset5.glb"></a-asset-item>
+      <a-asset-item id="asset6" src="models/asset6.glb"></a-asset-item>
+    </a-assets>
 
-      <!-- Cámara y controles -->
-      <a-entity id="cameraRig">
-        <a-entity camera position="0 1.6 0"
-                  look-controls="pointerLockEnabled: true"
-                  wasd-controls="acceleration: 100; fly: false">
-        </a-entity>
-      </a-entity>
-    </a-scene>
+    <!-- NO luz exterior: el exterior es negro (background arriba) -->
 
-    <script>
-      // Ajustar materia invisibilidad de plano de sombra al cargar la escena
-      document.querySelector('a-scene').addEventListener('loaded', () => {
-        const plane = document.querySelector('#shadowPlane');
-        const mesh = plane.getObject3D('mesh');
-        if (mesh) {
-          mesh.material = new THREE.ShadowMaterial({ opacity: 0.5 });
-          mesh.material.side = THREE.DoubleSide;
+    <!-- LUZ INTERIOR VERDE (point light) -->
+    <!-- Posición solicitada: x:-6 y:2 z:4 -->
+    <a-entity id="greenLamp"
+              position="-6 2 4"
+              light="type: point; color: #2bff7a; intensity: 8; distance: 30; decay: 2; castShadow: true">
+    </a-entity>
+
+    <!-- PLANO receptor de sombras (será reemplazado por ShadowMaterial en JS) -->
+    <a-entity id="shadowPlane"
+              geometry="primitive: plane; width: 20; height: 20"
+              rotation="-90 0 0"
+              position="0 0 0"
+              shadow="receive: true">
+    </a-entity>
+
+    <!-- ENTIDADES GLB (usa tus modelos ya precargados en a-assets) -->
+    <a-entity id="piso"    gltf-model="#pisoModel"   shadow="receive: true"></a-entity>
+    <a-entity id="paredes" gltf-model="#paredesModel" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="techo"   gltf-model="#techoModel"  shadow="cast: true"></a-entity>
+
+    <!-- assets (muebles, decor) -->
+    <a-entity id="asset1_ent" gltf-model="#asset1" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="asset2_ent" gltf-model="#asset2" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="asset3_ent" gltf-model="#asset3" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="asset4_ent" gltf-model="#asset4" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="asset5_ent" gltf-model="#asset5" shadow="cast: true; receive: true"></a-entity>
+    <a-entity id="asset6_ent" gltf-model="#asset6" shadow="cast: true; receive: true"></a-entity>
+
+    <!-- RIG / Cámara: la cámara es más baja (1.2m) y el rig se centrará automáticamente -->
+    <a-entity id="rig"
+              movement-controls="controls: keyboard, gamepad, trackpad, touch, nipple; speed: 1"
+              position="0 0 0">
+      <a-entity id="cam" camera position="0 1.2 0" look-controls="pointerLockEnabled: true; touchEnabled: true"></a-entity>
+    </a-entity>
+
+  </a-scene>
+
+  <script>
+  (function(){
+    const scene = document.getElementById('scene');
+
+    // Al cargar renderer, ajustar parámetros globales (shadows, pixelRatio)
+    scene.addEventListener('render-target-loaded', () => {
+      try {
+        const renderer = scene.renderer;
+        if (!renderer) return;
+        // limitar pixel ratio para estabilidad en móviles
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        console.log('[scene] renderer ready — shadowMap type set to PCFSoft.');
+      } catch (e) {
+        console.warn('[scene] renderer config failed', e);
+      }
+    });
+
+    // Reemplaza material del plano por ShadowMaterial (recibe sombras)
+    function setupShadowPlane() {
+      const planeEl = document.getElementById('shadowPlane');
+      if (!planeEl) return;
+      const mesh = planeEl.getObject3D('mesh') || planeEl.getObject3D('model');
+      if (!mesh) {
+        // si aún no existe, volver a intentar
+        setTimeout(setupShadowPlane, 120);
+        return;
+      }
+      mesh.traverse(node => {
+        if (node.isMesh) {
+          node.material = new THREE.ShadowMaterial({ opacity: 0.45 });
+          node.material.side = THREE.DoubleSide;
+          node.receiveShadow = true;
+          node.castShadow = false;
         }
-        // Centrado automático: calcular bounding box de los modelos
-        const bbox = new THREE.Box3();
-        document.querySelectorAll('a-entity[gltf-model]').forEach(ent => {
-          const obj = ent.getObject3D('mesh');
-          if (obj) bbox.expandByObject(obj);
-        });
-        const center = bbox.getCenter(new THREE.Vector3());
-        const rig = document.querySelector('#cameraRig');
-        rig.object3D.position.set(center.x, center.y, center.z);
       });
-    </script>
-  </body>
+      console.log('[shadowPlane] ShadowMaterial aplicado.');
+    }
+
+    // Ajusta parámetros de la luz verde (mapSize, bias, normalBias)
+    function tuneGreenLight() {
+      const lampEl = document.getElementById('greenLamp');
+      if (!lampEl) return;
+      const light = lampEl.getObject3D && lampEl.getObject3D('light');
+      if (!light || !light.shadow) {
+        // intentar otra vez si no está listo
+        requestAnimationFrame(tuneGreenLight);
+        return;
+      }
+      try {
+        // escoger tamaño razonable según capacidades GPU
+        const maxTex = (scene.renderer && scene.renderer.capabilities && (scene.renderer.capabilities.maxTextureSize || 4096)) || 2048;
+        const size = Math.min(4096, Math.max(1024, Math.floor(maxTex / 1)));
+        light.castShadow = true;
+        light.shadow.mapSize.width = size;
+        light.shadow.mapSize.height = size;
+        // fixes para acne y peter panning
+        light.shadow.bias = -0.0005;
+        if ('normalBias' in light) light.normalBias = 0.02;
+        if ('radius' in light.shadow) light.shadow.radius = 2.5;
+        // distance already set in component attribute; ensure near/far are sane
+        if (light.shadow.camera) {
+          light.shadow.camera.near = 0.1;
+          light.shadow.camera.far = Math.max(50, light.distance || 50);
+          if (typeof light.shadow.camera.updateProjectionMatrix === 'function') {
+            light.shadow.camera.updateProjectionMatrix();
+          }
+        }
+        console.log('[greenLamp] tuned', { mapSize: size, bias: light.shadow.bias });
+      } catch (e) {
+        console.warn('[greenLamp] tune failed', e);
+      }
+    }
+
+    // Cuando cualquier modelo cargue, forzar que sus meshes reciban/proyecten sombras
+    function enableShadowsForModel(el) {
+      if (!el) return;
+      el.addEventListener('model-loaded', (ev) => {
+        const model = (ev.detail && (ev.detail.model || ev.detail.scene)) || el.getObject3D('mesh') || el.getObject3D('model');
+        if (!model) return;
+        model.traverse(node => {
+          if (!node.isMesh) return;
+          node.castShadow = true;
+          node.receiveShadow = true;
+          // asegurar que tenga normales
+          if (node.geometry && !node.geometry.attributes.normal) {
+            node.geometry.computeVertexNormals();
+          }
+        });
+      });
+      // si ya cargado
+      const maybe = el.getObject3D('mesh') || el.getObject3D('model');
+      if (maybe) el.emit('model-loaded', { model: maybe }, false);
+    }
+
+    // Centrar el rig según bbox de piso/paredes/techo tras carga
+    function centerRigOnScene() {
+      const rig = document.getElementById('rig');
+      const ids = ['piso','paredes','techo'];
+      const objs = [];
+      ids.forEach(id => {
+        const ent = document.getElementById(id);
+        if (ent) {
+          const m = ent.getObject3D('mesh') || ent.getObject3D('model');
+          if (m) objs.push(m);
+        }
+      });
+      // si no hay ninguno listo, volver a intentar un poco después
+      if (objs.length === 0) {
+        setTimeout(centerRigOnScene, 300);
+        return;
+      }
+      // calcular bbox combinado
+      const box = new THREE.Box3();
+      objs.forEach(o => { try { box.expandByObject(o); } catch(e){} });
+      if (box.isEmpty()) {
+        // fallback
+        rig.object3D.position.set(0, 1.2, 0);
+        return;
+      }
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      const baseY = box.min.y;
+      // colocar rig centrado en X/Z y a altura baseY + cámaraHeight
+      const cameraHeight = 1.2;
+      rig.object3D.position.set(center.x, baseY + cameraHeight, center.z);
+      // asegurar que la cámara local quede en 0,cameraHeight,0
+      const cam = document.getElementById('cam');
+      if (cam) cam.setAttribute('position', `0 ${cameraHeight} 0`);
+      // ajustar shadowPlane a tamaño del cuarto
+      const plane = document.getElementById('shadowPlane');
+      if (plane) {
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        plane.setAttribute('position', `${center.x} ${baseY + 0.001} ${center.z}`);
+        plane.setAttribute('geometry', `primitive: plane; width: ${Math.max(0.1, size.x)}; height: ${Math.max(0.1, size.z)}`);
+      }
+      console.log('[rig] centrado en', rig.object3D.position);
+    }
+
+    // Registrar todos los gltf-models para aplicar reglas de sombra y centrado
+    const modelIds = ['piso','paredes','techo','asset1_ent','asset2_ent','asset3_ent','asset4_ent','asset5_ent','asset6_ent'];
+    modelIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) enableShadowsForModel(el);
+    });
+
+    // invoca setups
+    setupShadowPlane();
+    tuneGreenLight();
+
+    // centro inicial + reintentos para cuando terminen de cargar los modelos
+    centerRigOnScene();
+    // reintentar después de cargas tardías
+    setTimeout(centerRigOnScene, 1200);
+    setTimeout(tuneGreenLight, 500);
+
+    // Exponer util en consola para debug manual
+    window.__scene_helpers = {
+      reCenter: centerRigOnScene,
+      tuneLight: tuneGreenLight
+    };
+
+  })();
+  </script>
+</body>
 </html>
