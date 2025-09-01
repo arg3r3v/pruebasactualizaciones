@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Galería — Diagnóstico y correcciones</title>
+  <title>Galería — Diagnóstico y correcciones (posiciones actualizadas)</title>
 
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
@@ -25,28 +25,26 @@
       <a-asset-item id="cuarto6" src="models/cuarto6.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Ambient suave para no perder toda info en sombras -->
+    <!-- Ambient suave -->
     <a-entity light="type:ambient; intensity:0.14; color:#0b0b0b"></a-entity>
 
-    <!-- CUARTO (escenario) -->
+    <!-- Escenario y props -->
     <a-entity id="cuarto1_ent" gltf-model="#cuarto1" nav-mesh shadow="receive:true"></a-entity>
-
-    <!-- OBJECTS (props) -->
     <a-entity id="cuarto2_ent" gltf-model="#cuarto2" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto3_ent" gltf-model="#cuarto3" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto4_ent" gltf-model="#cuarto4" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="cast:true; receive:true"></a-entity>
     <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="cast:true; receive:true"></a-entity>
 
-    <!-- LUZ en el centro del cuarto (CAMBIE la posicion aquí) -->
-    <a-entity id="greenLamp" position="0 1.6 0"
-              light="type:point; color: #2bff7a; intensity: 80; distance: 30; decay: 2; castShadow: true">
+    <!-- LUZ: posición Y subida 80% -> 1.6 * 1.8 = 2.88 (intensity permanece igual) -->
+    <a-entity id="greenLamp" position="0 2.88 0"
+              light="type:point; color: #2bff7a; intensity: 144; distance: 30; decay: 2; castShadow: true">
     </a-entity>
 
-    <!-- RIG / Cámara -->
+    <!-- RIG / Cámara: altura subida 50% -> 2.7 * 1.5 = 4.05 -->
     <a-entity id="rig" position="0 0 2"
               movement-controls="constrainToNavMesh:true; controls: checkpoint, gamepad, trackpad, keyboard, nipple;">
-      <a-entity camera position="0 1.8 0" look-controls="pointerLockEnabled:true"><a-cursor></a-cursor></a-entity>
+      <a-entity camera position="0 4.05 0" look-controls="pointerLockEnabled:true"><a-cursor></a-cursor></a-entity>
     </a-entity>
   </a-scene>
 
@@ -57,10 +55,10 @@
 
   const TARGET_MIN_TEX = 1024;
   const MAX_PIXELRATIO = Math.min(window.devicePixelRatio || 1, 2);
-  const SHADOW_MAP_SIZE = 2048; // prueba 2048; sube a 4096 solo si tu GPU lo aguanta
+  const SHADOW_MAP_SIZE = 2048;
   const SHADOW_BIAS = -0.0004;
   const SHADOW_NORMAL_BIAS = 0.02;
-  // helpers
+
   function isPowerOfTwo(v){ return (v & (v - 1)) === 0; }
   function nextPOT(v){ let p=1; while(p<v) p<<=1; return p; }
   function preferSRGBForKey(key){
@@ -68,7 +66,6 @@
     return col.indexOf(key) !== -1;
   }
 
-  // Renderer config
   sceneEl.addEventListener('render-target-loaded', () => {
     try {
       const renderer = sceneEl.renderer;
@@ -81,7 +78,6 @@
     } catch(e){ console.warn('[fix] renderer config failed', e); }
   });
 
-  // Promote material -> MeshStandardMaterial (conservar mapas)
   function promoteToStandard(oldMat, renderer){
     if (!oldMat) return null;
     if (oldMat.isMeshStandardMaterial) return oldMat;
@@ -98,7 +94,6 @@
     return newMat;
   }
 
-  // Ensure texture good (mipmaps, encoding) -> try upscale to POT if small
   function ensureTextureGood(tex, key, renderer){
     if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
     const img = tex.image;
@@ -142,14 +137,12 @@
     return {ok:true, replaced:false, info:{w,h,isPOT}};
   }
 
-  // Detect floor candidate meshes inside model (by name or by biggest XZ area)
   function detectFloorCandidates(root){
     const meshes = [];
     root.traverse(node => { if (node.isMesh) meshes.push(node); });
     if (!meshes.length) return [];
     const byName = meshes.filter(m => m.name && /floor|piso|ground|suelo|tile/i.test(m.name));
     if (byName.length) return byName;
-    // fallback largest XZ area
     const areaArr = meshes.map(m=>{
       const bb = new THREE.Box3().setFromObject(m);
       const s = new THREE.Vector3(); bb.getSize(s);
@@ -158,7 +151,6 @@
     return areaArr.slice(0,1).map(x=>x.m);
   }
 
-  // Inspect and fix model when loaded
   function inspectAndFixModel(el){
     const renderer = sceneEl.renderer;
     if (!el) return;
@@ -168,12 +160,10 @@
         const fixes = [];
         root.traverse(node => {
           if (!node.isMesh) return;
-          // normals
           if (node.geometry && !node.geometry.attributes.normal) {
             node.geometry.computeVertexNormals();
             fixes.push({type:'computedNormals', mesh: node.name || node.id});
           }
-          // materials & textures
           const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
           mats.forEach((mat, idx) => {
             if (!mat) return;
@@ -198,12 +188,10 @@
               }
             });
           });
-          // shadows default
           node.castShadow = true;
           node.receiveShadow = true;
         });
 
-        // mark floors
         const floors = detectFloorCandidates(root);
         floors.forEach(f => {
           f.receiveShadow = true;
@@ -220,12 +208,10 @@
         console.warn('[fix] model inspect failed for', el.id, e);
       }
     });
-    // If already loaded
     const maybe = el.getObject3D('mesh') || el.getObject3D('model');
     if (maybe) el.emit('model-loaded', { model: maybe }, false);
   }
 
-  // Improve shadow params of the lamp (mapSize, bias, normalBias, radius)
   function enhanceLampShadows(lampId){
     const el = document.getElementById(lampId);
     if (!el) return;
@@ -239,11 +225,8 @@
         light.shadow.mapSize.width = ms;
         light.shadow.mapSize.height = ms;
         light.shadow.bias = SHADOW_BIAS;
-        // normalBias helps reduce acne for thin geometry
         if ('normalBias' in light) light.normalBias = SHADOW_NORMAL_BIAS;
-        // soft radius
         if ('radius' in light.shadow) light.shadow.radius = 2.5;
-        // expand camera for point/spot as needed
         if (light.shadow.camera && light.shadow.camera.updateProjectionMatrix) {
           light.shadow.camera.near = 0.1;
           light.shadow.camera.far = 200;
@@ -254,14 +237,10 @@
     }, 250);
   }
 
-  // run for all gltf models
   const nodes = sceneEl.querySelectorAll('[gltf-model]');
   nodes.forEach(n => inspectAndFixModel(n));
-
-  // apply lamp shadow tuning and small delay to ensure light exists
   enhanceLampShadows('greenLamp');
 
-  // debug helpers
   window.__aframe_debug = {
     toggleWireframe: function(state){
       sceneEl.object3D.traverse(node=>{
