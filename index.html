@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Galería — Diagnóstico y correcciones (posiciones actualizadas)</title>
 
-  <!-- Nota: idealmente añade SRI (integrity) para producción; aquí dejo crossorigin para reducir riesgos -->
   <script crossorigin="anonymous" src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.2/dist/aframe-extras.min.js"></script>
 
@@ -52,9 +51,7 @@
 
 <script>
 (function(){
-  // Robust THREE reference (en A-Frame THREE puede vivir en AFRAME.THREE)
   const THREE = (window.AFRAME && AFRAME.THREE) ? AFRAME.THREE : window.THREE;
-
   const sceneEl = document.getElementById('scene');
   if (!sceneEl) return;
 
@@ -71,7 +68,6 @@
     return col.indexOf(key) !== -1;
   }
 
-  // Configura renderer cuando esté listo (buena práctica)
   sceneEl.addEventListener('render-target-loaded', () => {
     try {
       const renderer = sceneEl.renderer;
@@ -84,30 +80,25 @@
     } catch(e){ console.warn('[fix] renderer config failed', e); }
   });
 
-  // Promueve materiales clásicos a MeshStandardMaterial preservando flags importantes
   function promoteToStandard(oldMat){
     if (!oldMat) return null;
     if (oldMat.isMeshStandardMaterial) return oldMat;
     const newMat = new THREE.MeshStandardMaterial();
 
-    // copiar texturas comunes si existen
     const copyTexKeys = ['map','normalMap','roughnessMap','metalnessMap','aoMap','emissiveMap','alphaMap','lightMap'];
     copyTexKeys.forEach(k => { if (oldMat[k]) newMat[k] = oldMat[k]; });
 
-    // copiar propiedades/flags que afectan apariencia/performance
     const copyFlags = [
       'transparent','opacity','alphaTest','vertexColors','skinning','morphTargets',
       'flatShading','wireframe','emissiveIntensity','metalness','roughness','name','userData'
     ];
     copyFlags.forEach(k => { if (oldMat[k] !== undefined) newMat[k] = oldMat[k]; });
 
-    // preservar 'side' si existía, evita forzar DoubleSide globalmente
     newMat.side = (oldMat.side !== undefined) ? oldMat.side : THREE.FrontSide;
 
     if (oldMat.color) newMat.color.copy(oldMat.color);
     if (oldMat.emissive) newMat.emissive.copy(oldMat.emissive);
 
-    // default si no venían del material original
     newMat.roughness = (oldMat.roughness !== undefined) ? oldMat.roughness : (newMat.roughness !== undefined ? newMat.roughness : 1.0);
     newMat.metalness = (oldMat.metalness !== undefined) ? oldMat.metalness : (newMat.metalness !== undefined ? newMat.metalness : 0.0);
 
@@ -115,7 +106,6 @@
     return newMat;
   }
 
-  // Mejora y valida texturas: respeta wrap/flipY/format; evita reemplazar mapas que requieren uv2 sin uv2
   function ensureTextureGood(tex, key, renderer, mesh){
     if (!tex || !tex.image) return {ok:false, reason:'no-tex'};
     const img = tex.image;
@@ -125,7 +115,6 @@
 
     try { tex.encoding = preferSRGBForKey(key) && THREE && THREE.sRGBEncoding ? THREE.sRGBEncoding : THREE.LinearEncoding; } catch(e){}
 
-    // Si es aoMap o lightMap necesitamos uv2 en la geometría: si no hay uv2, no reescalar automáticamente
     if ((key === 'aoMap' || key === 'lightMap') && mesh && mesh.geometry && !mesh.geometry.attributes.uv2) {
       return {ok:false, reason:'missing-uv2'};
     }
@@ -151,13 +140,11 @@
         newTex.minFilter = THREE.LinearMipmapLinearFilter;
         newTex.magFilter = THREE.LinearFilter;
 
-        // preservar anisotropy si es posible
         try { 
-          const maxAniso = renderer.capabilities && (renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : (renderer.capabilities.getMaxAnisotropy && renderer.capabilities.getMaxAnisotropy())) || 1;
+          const maxAniso = renderer.capabilities && (renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1) || 1;
           newTex.anisotropy = maxAniso;
         } catch(e){ newTex.anisotropy = 1; }
 
-        // intenta preservar wrap/flipY/premultiply/format si vinieron del original
         newTex.wrapS = tex.wrapS || THREE.ClampToEdgeWrapping;
         newTex.wrapT = tex.wrapT || THREE.ClampToEdgeWrapping;
         if (tex.flipY !== undefined) newTex.flipY = tex.flipY;
@@ -172,7 +159,6 @@
       }
     }
 
-    // si ya está bien
     tex.generateMipmaps = true;
     tex.minFilter = tex.minFilter || THREE.LinearMipmapLinearFilter;
     tex.magFilter = tex.magFilter || THREE.LinearFilter;
@@ -181,7 +167,6 @@
     return {ok:true, replaced:false, info:{w,h,isPOT}};
   }
 
-  // Detecta candidate para suelo (heurístico por nombre o mayor area)
   function detectFloorCandidates(root){
     const meshes = [];
     root.traverse(node => { if (node.isMesh) meshes.push(node); });
@@ -196,7 +181,6 @@
     return areaArr.slice(0,1).map(x=>x.m);
   }
 
-  // Inspecciona y arregla modelos; listener con once:true para evitar acumulación
   function inspectAndFixModel(el){
     if (!el) return;
     const renderer = sceneEl.renderer;
@@ -210,34 +194,28 @@
         root.traverse(node => {
           if (!node.isMesh) return;
 
-          // Si no tiene normales, calcula
           if (node.geometry && !node.geometry.attributes.normal) {
             node.geometry.computeVertexNormals();
             fixes.push({type:'computedNormals', mesh: node.name || node.id});
           }
 
-          // Materiales (puede ser array o único)
           const mats = Array.isArray(node.material) ? node.material.slice() : [node.material];
           mats.forEach((mat, idx) => {
             if (!mat) return;
-
-            // Si es tipo antiguo, promuévelo preservando flags
             if (mat.isMeshBasicMaterial || mat.isMeshLambertMaterial || mat.isMeshPhongMaterial) {
               const promoted = promoteToStandard(mat);
               if (promoted) {
                 if (Array.isArray(node.material)) node.material[idx] = promoted;
                 else node.material = promoted;
                 fixes.push({type:'promotedMaterial', mesh: node.name || node.id, matIndex: idx});
-                mat = promoted; // continuar usando promoted
+                mat = promoted;
               }
             }
 
-            // Revisa mapas de textura relevantes
             ['map','emissiveMap','lightMap','aoMap','normalMap','metalnessMap','roughnessMap','alphaMap'].forEach(k => {
               if (node.material && node.material[k]) {
                 const res = ensureTextureGood(node.material[k], k, renderer, node);
                 if (res.ok && res.replaced && res.newTex) {
-                  // dispose del mapa viejo si existía para evitar fuga
                   try { if (node.material[k] && node.material[k].dispose) node.material[k].dispose(); } catch(e){}
                   node.material[k] = res.newTex;
                   node.material.needsUpdate = true;
@@ -249,27 +227,74 @@
             });
           });
 
-          // Decide sombras: aplica por defecto, pero permite opt-out via userData.noShadow
           if (!(node.userData && node.userData.noShadow)) {
             node.castShadow = true;
             node.receiveShadow = true;
           }
         });
 
-        // Marca suelo para recibir sombras en forma preferente
+        // --- NUEVA LÓGICA para marcar suelo en meshes que pueden contener techo/paredes ---
+        // Si el mesh detectado como "floor" es el mismo que contiene paredes/techo (mesh único),
+        // evitar forzar cambios que afecten a toda la malla (p. ej. side = DoubleSide).
+        // En su lugar:
+        //  - activar receiveShadow
+        //  - desactivar castShadow para ese mesh
+        //  - aplicar polygonOffset en sus materiales para evitar z-fighting/sombras flotadas
+        //  - garantizar depthWrite = true y que transparent = false si opacity === 1
         const floors = detectFloorCandidates(root);
         floors.forEach(f => {
+          // marca para recibir sombras sin hacer cambios destructivos
           f.receiveShadow = true;
           f.castShadow = false;
+
+          // Si la geometría tiene grupos (multi-material), intentar aplicar cambios solo al material
+          // correspondiente. Si la malla usa un material compartido ampliamente, aplicamos
+          // polygonOffset y aseguramos depthWrite para evitar desapariciones.
           if (f.material) {
-            if (Array.isArray(f.material)) {
-              f.material.forEach(m=>{ if (m){ m.side = (m.side !== undefined) ? m.side : THREE.DoubleSide; m.needsUpdate = true; }});
-            } else {
-              f.material.side = (f.material.side !== undefined) ? f.material.side : THREE.DoubleSide;
-              f.material.needsUpdate = true;
-            }
+            const materials = Array.isArray(f.material) ? f.material : [f.material];
+            materials.forEach(m => {
+              // No forzar DoubleSide si el material está compartido (no es seguro)
+              // En vez de eso, aplicar polygonOffset para que la sombra se proyecte correctamente
+              try {
+                // polygonOffset ayuda a evitar z-fighting sin alterar el side/renderOrder
+                m.polygonOffset = true;
+                // valores prudentes — puedes ajustar si aún hay z-fighting
+                m.polygonOffsetFactor = (m.polygonOffsetFactor !== undefined) ? m.polygonOffsetFactor : 1;
+                m.polygonOffsetUnits = (m.polygonOffsetUnits !== undefined) ? m.polygonOffsetUnits : 4;
+
+                // Aseguramos que la profundidad se escriba y que no esté en la cola de transparencias
+                if (m.opacity !== undefined && m.opacity >= 1) {
+                  m.transparent = false;
+                  m.depthWrite = true;
+                } else {
+                  // si tiene transparencia real, respétala pero cuida el alphaTest mínimo
+                  if (m.transparent && (m.alphaTest === undefined || m.alphaTest < 0.0001)) {
+                    m.alphaTest = m.alphaTest || 0.0001;
+                  }
+                }
+
+                // si el material tenía side undefined, no tocarlo; si realmente necesita DoubleSide
+                // (caso raro) solo aplicarlo si el material no es usado por otra malla:
+                // comprobamos si el material es referenciado más de una vez en la escena
+                let usageCount = 0;
+                sceneEl.object3D.traverse(n => { if (n.isMesh) {
+                  const mats = Array.isArray(n.material) ? n.material : [n.material];
+                  mats.forEach(mm => { if (mm === m) usageCount++; });
+                }});
+                if (usageCount === 1 && (m.side === undefined || m.side === THREE.FrontSide) && /* heurístico: material necesita doble cara? */ false) {
+                  // aquí no forzamos por defecto; dejo comentado para referencia
+                  // m.side = THREE.DoubleSide;
+                }
+
+                m.needsUpdate = true;
+              } catch(e){
+                console.warn('[fix] failed to adjust floor material safely', e);
+              }
+            });
           }
-          fixes.push({type:'floorMarked', mesh: f.name || f.id});
+
+          // registro
+          fixes.push({type:'floorSafeMarked', mesh: f.name || f.id});
         });
 
         console.log('[fix] issues found/fixed for', el.id, fixes.length ? fixes : 'none');
@@ -278,16 +303,12 @@
       }
     }
 
-    // Listener solo una vez
     el.addEventListener('model-loaded', onModelLoaded, { once: true });
 
-    // Si el objeto ya está presente, dispara inspección inmediata (sin duplicar listener por el once)
     const maybe = el.getObject3D('mesh') || el.getObject3D('model');
     if (maybe) el.emit('model-loaded', { model: maybe }, false);
   }
 
-  // Mejora parámetros de sombras de la lámpara sin tocar su posición/intensidad.
-  // Espera object3dset para asegurar que el light exista.
   function enhanceLampShadows(lampId){
     const el = document.getElementById(lampId);
     if (!el) return;
@@ -300,20 +321,13 @@
       if (light.shadow) {
         const maxAllowed = (sceneEl.renderer && sceneEl.renderer.capabilities && sceneEl.renderer.capabilities.maxTextureSize) || SHADOW_MAP_SIZE;
         const ms = Math.min(SHADOW_MAP_SIZE, maxAllowed);
-
-        // Dispose del shadow map existente para evitar fugas GPU antes de cambiar tamaño
         try { if (light.shadow.map) { light.shadow.map.dispose(); light.shadow.map = null; } } catch(e){}
-
         light.shadow.mapSize.width = ms;
         light.shadow.mapSize.height = ms;
         if ('bias' in light.shadow) light.shadow.bias = SHADOW_BIAS;
-        // normalBias suele estar en shadow (Three r125+); intenta colocarlo donde exista
         if (light.shadow.normalBias !== undefined) light.shadow.normalBias = SHADOW_NORMAL_BIAS;
         else if (light.normalBias !== undefined) light.normalBias = SHADOW_NORMAL_BIAS;
-
         if (light.shadow.radius !== undefined) light.shadow.radius = 2.5;
-
-        // Ajustes genéricos de cámara de sombra si están presentes (funciona para directional/spot)
         if (light.shadow.camera && light.shadow.camera.updateProjectionMatrix) {
           light.shadow.camera.near = 0.1;
           light.shadow.camera.far = 200;
@@ -324,14 +338,10 @@
     }, { once: true });
   }
 
-  // Aplica inspección a cada entidad con gltf-model
   const nodes = sceneEl.querySelectorAll('[gltf-model]');
   nodes.forEach(n => inspectAndFixModel(n));
-
-  // Mejora sombras de la lámpara (no se cambia pos/intensity)
   enhanceLampShadows('greenLamp');
 
-  // Herramientas de debug útiles y seguras
   window.__aframe_debug = {
     toggleWireframe: function(state){
       sceneEl.object3D.traverse(node=>{
@@ -343,7 +353,6 @@
     },
     onlyAmbient: function(on){
       sceneEl.object3D.traverse(node=>{
-        // visibilidad de luces no-Ambient
         if (node.isLight && node.type !== 'AmbientLight'){
           node.visible = on ? false : true;
         }
