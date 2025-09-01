@@ -30,10 +30,6 @@
                 light="type: point; color: #2bff7a; intensity: 10; distance: 30; decay: 2; castShadow: true">
       </a-entity>
 
-      <!-- Suelo receptor de sombras (invisible) -->
-      <a-entity id="shadowPlane" geometry="primitive: plane; width: 20; height: 20"
-                rotation="-90 0 0" position="0 0 0" shadow="receive: true"></a-entity>
-
       <!-- Modelos GLB cargados -->
       <a-entity gltf-model="#pisoModel" shadow="receive: true"></a-entity>
       <a-entity gltf-model="#paredesModel" shadow="cast: true; receive: true"></a-entity>
@@ -51,7 +47,7 @@
       <a-entity id="cameraRig">
         <a-entity camera position="0 1.6 0"
                   look-controls="pointerLockEnabled: true"
-                  wasd-controls="acceleration: 100; fly: false">
+                  wasd-controls="acceleration: 70; fly: false">
         </a-entity>
       </a-entity>
     </a-scene>
