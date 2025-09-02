@@ -10,21 +10,6 @@
     <style>
       html, body { height:100%; margin:0; background:#000; touch-action: none; -ms-touch-action: none; }
       a-scene { width:100%; height:100vh; display:block; }
-
-  /* Por defecto oculto ambas */
-  .desktop-only, .mobile-only {
-    display: none;
-  }
-
-  /* En pantallas grandes (ejemplo: escritorio) */
-  @media screen and (min-width: 768px) {
-    .desktop-only { display: block; }
-  }
-
-  /* En pantallas chicas (ejemplo: móvil) */
-  @media screen and (max-width: 767px) {
-    .mobile-only { display: block; }
-  }
     </style>
     
   </head>
@@ -52,7 +37,7 @@
 <a-entity gltf-model="#floorMesh" nav-mesh visible="false"></a-entity>
       
       <!-- Luces: ambiental + direccional -->
-      <a-entity id="greenLamp-desktop"
+      <a-entity id="greenLamp"
           position="-1.5 1.5 -0.75"
           light="type: point; 
                  color: #2bff7a; 
@@ -60,19 +45,13 @@
                  distance: 30; 
                  decay: 2; 
                  castShadow: true; 
-                 shadowMapWidth: 1920; 
-                 shadowMapHeight: 1920; 
+                 shadowMapWidth: 768; 
+                 shadowMapHeight: 768; 
                  shadowBias: -0.0003;
                 shadowRadius: 2;
                 shadowCameraNear: 0.1;
                 shadowCameraFar: 60">
         </a-entity>
-
-      <a-entity id="greenLamp-mobile"
-            position="-1.5 1.5 -0.75"
-            light="type: point; color: #2bff7a; intensity: 2; distance: 15; decay: 2; castShadow: true; shadowMapWidth: 768; shadowMapHeight: 768; shadowBias: -0.0003; shadowRadius: 1; shadowCameraNear: 0.1; shadowCameraFar: 30"
-            class="mobile-only">
-      </a-entity>
 
       <!-- Modelos GLB cargados -->
       <a-entity gltf-model="#pisoModel" shadow="receive: true"></a-entity>
