@@ -3,9 +3,14 @@
   <head>
     <meta charset="utf-8">
     <title>Escena A-Frame Realista</title>
-    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.controls.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.2/nipplejs.min.js"></script>
+  <!-- A-Frame (última 1.x estable adecuada) -->
+  <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+
+  <!-- nipple.js: cargar antes de aframe-extras para que éste lo detecte -->
+  <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
+
+  <!-- aframe-extras: BUNDLE completo (necesario: movement-controls, nav-mesh, nipple integration) -->
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.min.js"></script>
 
     <style>
       html, body { height:100%; margin:0; background:#000; touch-action: none; -ms-touch-action: none; }
