@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <title>Escena A-Frame Realista</title>
   <!-- A-Frame (última 1.x estable adecuada) -->
-  <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
-
+<script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+<script src="https://threejs.org/examples/js/deprecated/Geometry.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.min.js"></script>
 
     <style>
@@ -66,8 +66,9 @@
 
       <!-- Cámara y controles -->
 <a-entity id="rig" movement-controls="controls: keyboard,nipple; constrainToNavMesh: true;">
-  <a-entity camera position="0 1.6 0"></a-entity>
+  <a-entity camera position="0 1.6 0" look-controls></a-entity>
 </a-entity>
+
       </a-scene>
   </body>
 </html>
