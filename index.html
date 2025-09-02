@@ -69,10 +69,9 @@
 
       <!-- Cámara y controles -->
       <a-entity id="rig"
-                movement-controls="controls: keyboard,nipple; constrainToNavMesh: true; speed: 0.06; acceleration: 20; fly: false"
-                cap-movement="maxSpeedDesktop:0.8; maxSpeedMobile:0.35">
-        <a-entity camera position="0 1.6 0" look-controls="pointerLockEnabled: true; touchEnabled: true"></a-entity>
-      </a-entity>
+          movement-controls="controls: keyboard,nipple; constrainToNavMesh: true; nippleOptions: { multitouch: false };">
+  <a-entity camera position="0 1.6 0" look-controls="pointerLockEnabled: true; touchEnabled: true"></a-entity>
+</a-entity>
 
       </a-scene>
   </body>
