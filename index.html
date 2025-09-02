@@ -37,7 +37,7 @@
 <a-entity gltf-model="#floorMesh" nav-mesh visible="false"></a-entity>
       
       <!-- Luces: ambiental + direccional -->
-      <a-entity id="greenLamp-desktop"
+      <a-entity id="greenLamp"
           position="-1.5 1.5 -0.75"
           light="type: point; 
                  color: #2bff7a; 
@@ -51,22 +51,6 @@
                 shadowRadius: 2;
                 shadowCameraNear: 0.1;
                 shadowCameraFar: 60">
-        </a-entity>
-
-        <a-entity id="greenLamp-mobile"
-          position="-1.5 1.5 -0.75"
-          light="type: point; 
-                 color: #2bff7a; 
-                 intensity: 3.5; 
-                 distance: 15; 
-                 decay: 2; 
-                 castShadow: true; 
-                 shadowMapWidth: 500; 
-                 shadowMapHeight: 500; 
-                 shadowBias: -0.0001;
-                shadowRadius: 1;
-                shadowCameraNear: 0.05;
-                shadowCameraFar: 30">
         </a-entity>
 
       <!-- Modelos GLB cargados -->
@@ -91,18 +75,6 @@
 </a-entity>
 
       </a-scene>
-
-    <script>
-  document.addEventListener("DOMContentLoaded", () => {
-    if (window.innerWidth <= 768) {
-      // Activar móvil
-      document.querySelector("#greenLamp-mobile").setAttribute("visible", "true");
-    } else {
-      // Activar escritorio
-      document.querySelector("#greenLamp-desktop").setAttribute("visible", "true");
-    }
-  });
-</script>
     
   </body>
 </html>
