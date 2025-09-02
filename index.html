@@ -10,22 +10,6 @@
     <style>
       html, body { height:100%; margin:0; background:#000; touch-action: none; -ms-touch-action: none; }
       a-scene { width:100%; height:100vh; display:block; }
-      #joyzone {
-    position: fixed;
-    left: 14px;
-    bottom: 14px;
-    width: 140px;
-    height: 140px;
-    z-index: 9999;
-    touch-action: none; /* allow precise touch handling */
-    -webkit-user-select:none; user-select:none;
-  }
-  @media (pointer: coarse) {
-    #joyzone { display: block; opacity: 0.95; }
-  }
-  @media (pointer: fine) {
-    #joyzone { display: none; } /* hide on non-touch by default */
-  }
     </style>
     
   </head>
@@ -76,192 +60,17 @@
       <a-entity id="cuarto7_ent" gltf-model="#cuarto7" shadow="cast: true; receive: true"></a-entity>
 
       <!-- Cámara y controles -->
-      <a-entity id="rig" position="0 1.6 0" player-move>
-  <a-entity camera id="playerCam"
-            position="0 0 0"
-            look-controls="pointerLockEnabled: false; touchEnabled: true">
-    <a-cursor visible="false"></a-cursor>
-  </a-entity>
+<a-entity id="rig"
+  movement-controls="constrainToNavMesh: true;
+                     controls: keyboard, nipple;"
+  position="0 0 0">
+  <a-entity camera position="0 1.6 0" look-controls></a-entity>
 </a-entity>
+
+<a-entity nav-mesh gltf-model="#navmesh" visible="false"></a-entity>
 
 <!-- Contenedor del joystick (se usará solo en móviles) -->
 <div id="joyzone" aria-hidden="true"></div>
       
-    <script>
-      // Ajustar materia invisibilidad de plano de sombra al cargar la escena
-      document.querySelector('a-scene').addEventListener('loaded', () => {
-        const plane = document.querySelector('#shadowPlane');
-        const mesh = plane.getObject3D('mesh');
-        if (mesh) {
-          mesh.material = new THREE.ShadowMaterial({ opacity: 0.5 });
-          mesh.material.side = THREE.DoubleSide;
-        }
-        // Centrado automático: calcular bounding box de los modelos
-        const bbox = new THREE.Box3();
-        document.querySelectorAll('a-entity[gltf-model]').forEach(ent => {
-          const obj = ent.getObject3D('mesh');
-          if (obj) bbox.expandByObject(obj);
-        });
-        const center = bbox.getCenter(new THREE.Vector3());
-        const rig = document.querySelector('#cameraRig');
-        rig.object3D.position.set(center.x, center.y, center.z);
-      });
-
-      AFRAME.registerComponent('player-move', {
-  schema: {
-    speed: { type: 'number', default: 0.3 },      // m/s (ajusta si quieres más/menos)
-    smoothing: { type: 'number', default: 10.0 }, // mayor = más amortiguado
-    maxStep: { type: 'number', default: 0.04 },   // límite por frame (evita saltos)
-    clampToBounds: { type: 'boolean', default: false }, // si quieres limitar dentro de bounds
-    bounds: { type: 'vec6', default: { x: -10, y: -10, z: -10, x2: 10, y2: 10, z2: 10 } } // opcional
-  },
-  init: function () {
-    // variables
-    this.velocity = new THREE.Vector3();
-    this.target = new THREE.Vector3();
-    this.keys = { f:0,b:0,l:0,r:0 };
-    this.joystickActive = false;
-    this.joyDir = new THREE.Vector2(0,0);
-
-    // keyboard handlers (desktop)
-    this._kd = (e) => {
-      if (e.code === 'KeyW' || e.code === 'ArrowUp') this.keys.f = 1;
-      if (e.code === 'KeyS' || e.code === 'ArrowDown') this.keys.b = 1;
-      if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.keys.l = 1;
-      if (e.code === 'KeyD' || e.code === 'ArrowRight') this.keys.r = 1;
-    };
-    this._ku = (e) => {
-      if (e.code === 'KeyW' || e.code === 'ArrowUp') this.keys.f = 0;
-      if (e.code === 'KeyS' || e.code === 'ArrowDown') this.keys.b = 0;
-      if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.keys.l = 0;
-      if (e.code === 'KeyD' || e.code === 'ArrowRight') this.keys.r = 0;
-    };
-    window.addEventListener('keydown', this._kd);
-    window.addEventListener('keyup', this._ku);
-
-    // find camera for orientation & look-controls toggling
-    this.cameraEl = this.el.querySelector('[camera]');
-    this.lookControls = this.cameraEl && this.cameraEl.components && this.cameraEl.components['look-controls'];
-
-    // set up nipple joystick (touch)
-    this.setupJoystick();
-
-    // ensure scale 1
-    this.el.object3D.scale.set(1,1,1);
-  },
-
-  setupJoystick: function () {
-    const zone = document.getElementById('joyzone');
-    if (!zone) return;
-    // create nipple manager
-    try {
-      this.nm = nipplejs.create({
-        zone: zone,
-        mode: 'dynamic',
-        size: 120,
-        color: '#888',
-        restOpacity: 0.55
-      });
-    } catch (e) {
-      console.warn('nipplejs not available', e);
-      return;
-    }
-
-    // events
-    this.nm.on('start', (evt, data) => {
-      this.joystickActive = true;
-      // temporarily disable look-controls so user can move without rotating camera
-      if (this.lookControls && this.lookControls.pause) this.lookControls.pause();
-    });
-
-    this.nm.on('move', (evt, data) => {
-      if (!data || !data.vector) return;
-      // data.vector: normalized vector (x,y) where x=right, y=up
-      // we want forward/backward = -y, lateral = x
-      this.joyDir.set(data.vector.x || 0, data.vector.y || 0);
-      // clamp magnitude [0..1]
-      const mag = Math.sqrt(this.joyDir.x*this.joyDir.x + this.joyDir.y*this.joyDir.y);
-      if (mag > 1) this.joyDir.multiplyScalar(1/mag);
-    });
-
-    this.nm.on('end', (evt) => {
-      this.joystickActive = false;
-      this.joyDir.set(0,0);
-      // re-enable look-controls
-      if (this.lookControls && this.lookControls.play) this.lookControls.play();
-    });
-  },
-
-  remove: function () {
-    window.removeEventListener('keydown', this._kd);
-    window.removeEventListener('keyup', this._ku);
-    if (this.nm) { try { this.nm.destroy(); } catch(e){} }
-  },
-
-  tick: function (time, delta) {
-    const dt = Math.min(delta / 1000, 0.05);
-
-    // compute forward/right from camera yaw (ignore pitch)
-    let yaw = 0;
-    if (this.cameraEl && this.cameraEl.object3D) {
-      const q = this.cameraEl.object3D.quaternion;
-      const e = new THREE.Euler().setFromQuaternion(q, 'YXZ');
-      yaw = e.y;
-    } else {
-      yaw = this.el.object3D.rotation.y;
-    }
-    const yawQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0));
-    const forward = new THREE.Vector3(0,0,-1).applyQuaternion(yawQ).setY(0).normalize();
-    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
-
-    // keyboard input
-    const kbZ = (this.keys.f - this.keys.b);
-    const kbX = (this.keys.r - this.keys.l);
-
-    // joystick input (note: nipple's y is "up", we want forward=-y)
-    const joyForward = -this.joyDir.y; // forward/back
-    const joyRight = this.joyDir.x;    // left/right
-
-    // combine sources, joystick has priority if active (configurable)
-    const moveZ = this.joystickActive ? joyForward : kbZ;
-    const moveX = this.joystickActive ? joyRight  : kbX;
-
-    // compute target velocity vector in world-space
-    this.target.set(0,0,0);
-    if (Math.abs(moveZ) > 0 || Math.abs(moveX) > 0) {
-      this.target.add(forward.clone().multiplyScalar(moveZ));
-      this.target.add(right.clone().multiplyScalar(moveX));
-      this.target.normalize();
-      this.target.multiplyScalar(this.data.speed);
-    }
-
-    // smoothing (exponential)
-    const alpha = 1 - Math.exp(-this.data.smoothing * dt);
-    this.velocity.lerp(this.target, alpha);
-
-    // step and clamp
-    const step = this.velocity.clone().multiplyScalar(dt);
-    const stepLen = step.length();
-    if (stepLen > this.data.maxStep) step.multiplyScalar(this.data.maxStep / stepLen);
-
-    // apply position
-    this.el.object3D.position.add(step);
-
-    // optional bounds clamping
-    if (this.data.clampToBounds) {
-      const b = this.data.bounds;
-      const p = this.el.object3D.position;
-      // schema stores as object keys, but we accept it as vector-like; ensure numeric access
-      // support both vec6 and array shapes — user can set as needed
-      const minX = (b && b.x !== undefined) ? b.x : -10;
-      const minZ = (b && b.z !== undefined) ? b.z : -10;
-      const maxX = (b && b.x2 !== undefined) ? b.x2 : 10;
-      const maxZ = (b && b.z2 !== undefined) ? b.z2 : 10;
-      p.x = Math.min(Math.max(p.x, minX), maxX);
-      p.z = Math.min(Math.max(p.z, minZ), maxZ);
-    }
-  }
-});
-    </script>
   </body>
 </html>
