@@ -37,21 +37,41 @@
 <a-entity gltf-model="#floorMesh" nav-mesh visible="false"></a-entity>
       
       <!-- Luces: ambiental + direccional -->
-      <a-entity id="greenLamp"
-          position="-1.5 1.5 -0.75"
-          light="type: point; 
-                 color: #a3ff78; 
-                 intensity: 4; 
-                 distance: 30; 
-                 decay: 1; 
-                 castShadow: true; 
-                 shadowMapWidth: 540; 
-                 shadowMapHeight: 540; 
-                 shadowBias: -0.001;
-                shadowRadius: 1;
-                shadowCameraNear: 0.1;
-                shadowCameraFar: 30">
-        </a-entity>
+<!-- Lámpara para móvil -->
+  <a-entity id="greenLamp-mobile"
+    position="-1.5 1.5 -0.75"
+    visible="false"
+    light="type: point;
+           color: #a3ff78;
+           intensity: 3;
+           distance: 20;
+           decay: 1;
+           castShadow: true;
+           shadowMapWidth: 480;
+           shadowMapHeight: 480;
+           shadowBias: -0.001;
+           shadowRadius: 1;
+           shadowCameraNear: 0.1;
+           shadowCameraFar: 30">
+  </a-entity>
+
+  <!-- Lámpara para desktop -->
+  <a-entity id="greenLamp-desktop"
+    position="-1.5 1.5 -0.75"
+    visible="false"
+    light="type: point;
+           color: #2bff7a;
+           intensity: 5;
+           distance: 30;
+           decay: 2;
+           castShadow: true;
+           shadowMapWidth: 1920;
+           shadowMapHeight: 1920;
+           shadowBias: -0.0003;
+           shadowRadius: 2;
+           shadowCameraNear: 0.1;
+           shadowCameraFar: 60">
+  </a-entity>
 
       <!-- Modelos GLB cargados -->
       <a-entity gltf-model="#pisoModel" shadow="receive: true"></a-entity>
@@ -75,6 +95,17 @@
 </a-entity>
 
       </a-scene>
+
+    <script>
+  // Detecta si es móvil o escritorio
+  const isMobile = AFRAME.utils.device.isMobile();
+  
+  if (isMobile) {
+    document.querySelector("#greenLamp-mobile").setAttribute("visible", "true");
+  } else {
+    document.querySelector("#greenLamp-desktop").setAttribute("visible", "true");
+  }
+</script>
     
   </body>
 </html>
