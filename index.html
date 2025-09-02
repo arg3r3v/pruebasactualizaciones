@@ -5,7 +5,7 @@
     <title>Escena A-Frame Realista</title>
     <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.controls.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.2/nipplejs.min.js"></script>
 
     <style>
       html, body { height:100%; margin:0; background:#000; touch-action: none; -ms-touch-action: none; }
@@ -31,7 +31,9 @@
         <a-asset-item id="cuarto6" src="models/assets6.glb"></a-asset-item>
         <a-asset-item id="cuarto7" src="models/assets7.glb"></a-asset-item>
       </a-assets>
-
+      
+<a-entity gltf-model="#pisoModel" nav-mesh visible="false"></a-entity>
+      
       <!-- Luces: ambiental + direccional -->
       <a-entity id="greenLamp"
           position="-1.5 1.5 -0.75"
@@ -60,17 +62,9 @@
       <a-entity id="cuarto7_ent" gltf-model="#cuarto7" shadow="cast: true; receive: true"></a-entity>
 
       <!-- Cámara y controles -->
-<a-entity id="rig"
-  movement-controls="constrainToNavMesh: true;
-                     controls: keyboard, nipple;"
-  position="0 0 0">
-  <a-entity camera position="0 1.6 0" look-controls></a-entity>
+<a-entity id="rig" movement-controls="controls: keyboard,nipple; constrainToNavMesh: true;">
+  <a-entity camera position="0 1.6 0"></a-entity>
 </a-entity>
-
-<a-entity nav-mesh gltf-model="#navmesh" visible="false"></a-entity>
-
-<!-- Contenedor del joystick (se usará solo en móviles) -->
-<div id="joyzone" aria-hidden="true"></div>
       
   </body>
 </html>
