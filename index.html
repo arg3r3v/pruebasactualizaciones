@@ -38,22 +38,22 @@
       
       <!-- Luces: ambiental + direccional -->
 <!-- Lámpara para móvil -->
-  <a-entity id="greenLamp-mobile"
+<a-entity id="greenLamp-mobile"
     position="-1.5 1.5 -0.75"
     visible="false"
     light="type: point;
            color: #a3ff78;
-           intensity: 2;
+           intensity: 2.2;
            distance: 15;
-           decay: 0;
+           decay: 1;
            castShadow: true;
-           shadowMapWidth: 250;
-           shadowMapHeight: 250;
-           shadowBias: -0.0001;
-           shadowRadius: 1.5;
-           shadowCameraNear: 0.05;
-           shadowCameraFar: 15">
-  </a-entity>
+           shadowMapWidth: 150; 
+           shadowMapHeight: 150; 
+           shadowBias: -0.002; 
+           shadowRadius: 2; 
+           shadowCameraNear: 0.1; 
+           shadowCameraFar: 18">
+</a-entity>
 
   <!-- Lámpara para desktop -->
   <a-entity id="greenLamp-desktop"
