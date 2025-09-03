@@ -31,6 +31,8 @@
         <a-asset-item id="cuarto6" src="models/assets6.glb"></a-asset-item>
         <a-asset-item id="cuarto7" src="models/assets7.glb"></a-asset-item>
 
+        <a-asset-item id="moustroModel" src="models/moustrocuarto.glb"></a-asset-item>
+
         <a-asset-item id="floorMesh" src="models/navmesh.glb"></a-asset-item>
       </a-assets>
       
@@ -85,6 +87,13 @@
       <a-entity id="cuarto5_ent" gltf-model="#cuarto5" shadow="cast: true; receive: true"></a-entity>
       <a-entity id="cuarto6_ent" gltf-model="#cuarto6" shadow="cast: true; receive: true"></a-entity>
       <a-entity id="cuarto7_ent" gltf-model="#cuarto7" shadow="cast: true; receive: true"></a-entity>
+
+      <a-entity gltf-model="#moustroModel"
+          position="1.5 1.5 -0.75"
+          scale="1 1 1"
+          shadow="cast: true; receive: true"
+          animation-mixer="clip: *; loop: repeat; timeScale: 1">
+      </a-entity>
 
       <!-- Cámara y controles -->
 <a-entity id="rig"
